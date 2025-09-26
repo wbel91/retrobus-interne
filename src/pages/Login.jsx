@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+﻿import { useNavigate } from 'react-router-dom'
 import { Box, Button, Input, VStack, Text } from '@chakra-ui/react'
 import { useState } from 'react'
 import { useUser, validateCredentials } from '../context/UserContext'
@@ -20,7 +20,6 @@ export default function Login() {
     setLoading(true)
     setError("")
 
-    // Validation des identifiants
     const validation = validateCredentials(matricule.trim(), password)
     
     if (validation.isValid) {
@@ -37,25 +36,6 @@ export default function Login() {
     if (e.key === 'Enter') {
       handleLogin()
     }
-  } } from 'react-router-dom'
-import { Box, Button, Input, VStack, Text } from '@chakra-ui/react'
-import { useState } from 'react'
-import { useUser } from '../context/UserContext'
-
-export default function Login() {
-  const [matricule, setMat] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const navigate = useNavigate()
-  const { setMatricule } = useUser()
-
-  const handleLogin = () => {
-    if (matricule && password) {
-      setMatricule(matricule)
-      navigate("/dashboard")
-    } else {
-      setError("Êtes-vous sûr de votre saisie ? L’un des champs comporte une erreur.")
-    }
   }
 
   return (
@@ -63,9 +43,32 @@ export default function Login() {
       <VStack spacing={4} bg="white" p={8} borderRadius="lg" shadow="lg" minW="360px">
         <Text fontSize="2xl" fontWeight="bold">Connexion Intranet</Text>
         {error && <Text color="red.500" textAlign="center">{error}</Text>}
-        <Input placeholder="Matricule" value={matricule} onChange={e => setMat(e.target.value)} />
-        <Input placeholder="Mot de passe" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-        <Button colorScheme="blue" w="full" onClick={handleLogin}>Se connecter</Button>
+        <Input 
+          placeholder="Matricule" 
+          value={matricule} 
+          onChange={e => setMat(e.target.value)}
+          onKeyPress={handleKeyPress}
+        />
+        <Input 
+          placeholder="Mot de passe" 
+          type="password" 
+          value={password} 
+          onChange={e => setPassword(e.target.value)}
+          onKeyPress={handleKeyPress}
+        />
+        <Button 
+          colorScheme="blue" 
+          w="full" 
+          onClick={handleLogin}
+          isLoading={loading}
+          loadingText="Connexion..."
+        >
+          Se connecter
+        </Button>
+        <Text fontSize="sm" color="gray.500" textAlign="center">
+          Utilisateurs de test : n.nts, g.champenois, m.ravichandran<br />
+          Mot de passe : RBE2025TEST
+        </Text>
       </VStack>
     </Box>
   )
