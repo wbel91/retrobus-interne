@@ -11,7 +11,7 @@ import MyRBE from './MyRBE';
 import MyRBEActions from './MyRBEActions';
 import DashboardHome from './DashboardHome';
 import RetroMail from './RetroMail';
-import TopNavLink from './TopNavLink';
+import TopNavLink from "../components/TopNavLink";
 
 export default function Dashboard() {
   return (
