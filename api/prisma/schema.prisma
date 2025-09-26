@@ -42,3 +42,13 @@ model Report {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+model Flash {
+  id         String   @id  // flash-{timestamp}-{random}
+  message    String
+  category   String   // INFO, NOTIF, POS
+  active     Boolean  @default(true)
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

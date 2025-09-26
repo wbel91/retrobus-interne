@@ -8,6 +8,7 @@ import {
 } from "@chakra-ui/react";
 import { Link as RouterLink } from "react-router-dom";
 import { useUser } from "../context/UserContext";
+import { flashAPI } from "../api/flash.js";
 import logo from "../assets/retro_intranet_essonne.svg";
 import infoPng from "../assets/icons/flash-info.png";
 import notifPng from "../assets/icons/flash-notif.png";
@@ -38,25 +39,44 @@ const DISMISS_KEY_PREFIX = "rbe:announcements:dismissed:"; // + matricule -> map
 /* helpers */
 function generateId() { return `flash-${Date.now()}-${Math.floor(Math.random()*1000)}`; }
 
-function loadFlashes() {
+// Fonctions pour l'API (remplacent localStorage)
+async function loadFlashes() {
   try {
-    const raw = localStorage.getItem(ANN_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr;
+    const response = await flashAPI.getAll();
+    return Array.isArray(response.data) ? response.data : [];
   } catch (e) {
-    console.warn("Failed to load flashes", e);
+    console.warn("Failed to load flashes from API", e);
     return [];
   }
 }
-function saveFlashes(arr) {
+
+async function createFlash(flashData) {
   try {
-    localStorage.setItem(ANN_KEY, JSON.stringify(arr));
+    const response = await flashAPI.create(flashData);
+    return response.data;
+  } catch (e) {
+    console.error("Failed to create flash", e);
+    throw e;
+  }
+}
+
+async function updateFlash(id, flashData) {
+  try {
+    const response = await flashAPI.update(id, flashData);
+    return response.data;
+  } catch (e) {
+    console.error("Failed to update flash", e);
+    throw e;
+  }
+}
+
+async function deleteFlash(id) {
+  try {
+    await flashAPI.delete(id);
     return true;
   } catch (e) {
-    console.error("Failed to save flashes", e);
-    return false;
+    console.error("Failed to delete flash", e);
+    throw e;
   }
 }
 
@@ -121,9 +141,27 @@ export default function Header() {
   const manage = useDisclosure(); // admin megaphone manage modal
   const viewer = useDisclosure(); // viewer modal (for bell for non-admins or to view all)
 
-  const [flashes, setFlashes] = useState(() => loadFlashes());
+  const [flashes, setFlashes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // flash object being edited or null
   const [form, setForm] = useState({ message: "", category: "INFO", active: true, expiresAt: "" });
+
+  // Charger les flashs depuis l'API au montage
+  useEffect(() => {
+    async function fetchFlashes() {
+      try {
+        setLoading(true);
+        const flashesFromAPI = await loadFlashes();
+        setFlashes(flashesFromAPI);
+      } catch (e) {
+        console.error("Failed to load flashes:", e);
+        toast({ status: "error", title: "Erreur", description: "Impossible de charger les flashs" });
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchFlashes();
+  }, [toast]);
 
   // compute active flashes (filter by active and expiry)
   const now = Date.now();
@@ -147,10 +185,7 @@ export default function Header() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flashes, matricule, activeFlashes.length]);
 
-  // persist flashes if they change (admin edits)
-  useEffect(() => {
-    saveFlashes(flashes);
-  }, [flashes]);
+  // persist flashes removed - now handled by API
 
   // handlers for admin create / edit / delete / activate
   const openNew = () => {
@@ -168,37 +203,66 @@ export default function Header() {
     });
     manage.onOpen();
   };
-  const doSave = () => {
+  const doSave = async () => {
     const trimmed = (form.message || "").trim();
     if (!trimmed) return toast({ status: "warning", title: "Le message est requis" });
     if (!["INFO","NOTIF","POS"].includes(form.category)) form.category = "INFO";
-    const nowIso = new Date().toISOString();
-    if (editing) {
-      const updated = flashes.map(f => f.id === editing.id ? { ...f, message: trimmed, category: form.category, active: Boolean(form.active), expiresAt: form.expiresAt || null, updatedAt: nowIso } : f);
-      setFlashes(updated);
-      toast({ status: "success", title: "Flash modifié" });
-    } else {
-      const newF = {
-        id: generateId(),
-        message: trimmed,
-        category: form.category,
-        active: Boolean(form.active),
-        expiresAt: form.expiresAt || null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setFlashes(prev => [newF, ...prev]);
-      toast({ status: "success", title: "Flash ajouté" });
+    
+    try {
+      if (editing) {
+        // Update existing flash
+        const updatedFlash = await updateFlash(editing.id, {
+          message: trimmed,
+          category: form.category,
+          active: Boolean(form.active),
+          expiresAt: form.expiresAt || null
+        });
+        setFlashes(prev => prev.map(f => f.id === editing.id ? updatedFlash : f));
+        toast({ status: "success", title: "Flash modifié" });
+      } else {
+        // Create new flash
+        const newFlash = await createFlash({
+          id: generateId(),
+          message: trimmed,
+          category: form.category,
+          active: Boolean(form.active),
+          expiresAt: form.expiresAt || null
+        });
+        setFlashes(prev => [newFlash, ...prev]);
+        toast({ status: "success", title: "Flash ajouté" });
+      }
+      setEditing(null);
+      manage.onClose();
+    } catch (e) {
+      toast({ status: "error", title: "Erreur", description: "Impossible de sauvegarder le flash" });
     }
-    manage.onClose();
   };
-  const doDelete = (id) => {
+  
+  const doDelete = async (id) => {
     if (!confirm("Supprimer ce flash ?")) return;
-    setFlashes(prev => prev.filter(f => f.id !== id));
-    toast({ status: "info", title: "Flash supprimé" });
+    
+    try {
+      await deleteFlash(id);
+      setFlashes(prev => prev.filter(f => f.id !== id));
+      toast({ status: "info", title: "Flash supprimé" });
+    } catch (e) {
+      toast({ status: "error", title: "Erreur", description: "Impossible de supprimer le flash" });
+    }
   };
-  const toggleActive = (id) => {
-    setFlashes(prev => prev.map(f => f.id === id ? { ...f, active: !f.active, updatedAt: new Date().toISOString() } : f));
+  
+  const toggleActive = async (id) => {
+    try {
+      const flash = flashes.find(f => f.id === id);
+      if (!flash) return;
+      
+      const updatedFlash = await updateFlash(id, {
+        active: !flash.active
+      });
+      
+      setFlashes(prev => prev.map(f => f.id === id ? updatedFlash : f));
+    } catch (e) {
+      toast({ status: "error", title: "Erreur", description: "Impossible de modifier le flash" });
+    }
   };
 
   // Acknowledge for current user (mark as 'prise de connaissance' using timestamp)

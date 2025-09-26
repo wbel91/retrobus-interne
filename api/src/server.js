@@ -416,6 +416,114 @@ app.get('/retromail/list', async (req,res) => {
 app.use('/retromail/uploads', express.static(path.join(RETRO_DIR,'uploads')));
 app.use('/retromail', express.static(RETRO_DIR));
 
+// ===== FLASH INFO API =====
+
+// GET /flashes - Récupérer tous les flashs actifs
+app.get('/flashes', async (req, res) => {
+  try {
+    const now = new Date();
+    const flashes = await prisma.flash.findMany({
+      where: {
+        active: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: now } }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(flashes);
+  } catch (e) {
+    console.error('GET /flashes error:', e);
+    res.status(500).json({ error: 'Failed to load flashes' });
+  }
+});
+
+// GET /flashes/all - Récupérer tous les flashs (pour admin)
+app.get('/flashes/all', async (req, res) => {
+  try {
+    const flashes = await prisma.flash.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(flashes);
+  } catch (e) {
+    console.error('GET /flashes/all error:', e);
+    res.status(500).json({ error: 'Failed to load all flashes' });
+  }
+});
+
+// POST /flashes - Créer un nouveau flash (admin only)
+app.post('/flashes', async (req, res) => {
+  try {
+    const { id, message, category = 'INFO', active = true, expiresAt } = req.body;
+    
+    const flash = await prisma.flash.create({
+      data: {
+        id: id || `flash-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+        message,
+        category,
+        active,
+        expiresAt: expiresAt ? new Date(expiresAt) : null
+      }
+    });
+    
+    res.json(flash);
+  } catch (e) {
+    console.error('POST /flashes error:', e);
+    res.status(500).json({ error: 'Failed to create flash' });
+  }
+});
+
+// PUT /flashes/:id - Modifier un flash (admin only)
+app.put('/flashes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message, category, active, expiresAt } = req.body;
+    
+    const data = {};
+    if (message !== undefined) data.message = message;
+    if (category !== undefined) data.category = category;
+    if (active !== undefined) data.active = active;
+    if (expiresAt !== undefined) data.expiresAt = expiresAt ? new Date(expiresAt) : null;
+    
+    const flash = await prisma.flash.update({
+      where: { id },
+      data
+    });
+    
+    res.json(flash);
+  } catch (e) {
+    console.error('PUT /flashes/:id error:', e);
+    if (e.code === 'P2025') {
+      res.status(404).json({ error: 'Flash not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to update flash' });
+    }
+  }
+});
+
+// DELETE /flashes/:id - Supprimer un flash (admin only)
+app.delete('/flashes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await prisma.flash.delete({
+      where: { id }
+    });
+    
+    res.json({ success: true });
+  } catch (e) {
+    console.error('DELETE /flashes/:id error:', e);
+    if (e.code === 'P2025') {
+      res.status(404).json({ error: 'Flash not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to delete flash' });
+    }
+  }
+});
+
+// ===== FIN FLASH INFO API =====
+
 // ------- Démarrage serveur (local) ou export pour Vercel -------
 const PORT = process.env.PORT || 4000;
 
