@@ -43,7 +43,9 @@ function generateId() { return `flash-${Date.now()}-${Math.floor(Math.random()*1
 async function loadFlashes() {
   try {
     const response = await flashAPI.getAll();
-    return Array.isArray(response.data) ? response.data : [];
+    console.log("🔄 loadFlashes response:", response);
+    // L'API renvoie directement le JSON, pas response.data
+    return Array.isArray(response) ? response : [];
   } catch (e) {
     console.warn("Failed to load flashes from API", e);
     return [];
@@ -53,7 +55,9 @@ async function loadFlashes() {
 async function createFlash(flashData) {
   try {
     const response = await flashAPI.create(flashData);
-    return response.data;
+    console.log("🔄 createFlash response:", response);
+    // L'API renvoie directement le JSON, pas response.data
+    return response;
   } catch (e) {
     console.error("Failed to create flash", e);
     throw e;
@@ -63,7 +67,9 @@ async function createFlash(flashData) {
 async function updateFlash(id, flashData) {
   try {
     const response = await flashAPI.update(id, flashData);
-    return response.data;
+    console.log("🔄 updateFlash response:", response);
+    // L'API renvoie directement le JSON, pas response.data
+    return response;
   } catch (e) {
     console.error("Failed to update flash", e);
     throw e;
@@ -209,32 +215,42 @@ export default function Header() {
     if (!["INFO","NOTIF","POS"].includes(form.category)) form.category = "INFO";
     
     try {
+      console.log("🔧 Début sauvegarde flash:", { editing, form });
+      
       if (editing) {
         // Update existing flash
+        console.log("📝 Mise à jour flash:", editing.id);
         const updatedFlash = await updateFlash(editing.id, {
           message: trimmed,
           category: form.category,
           active: Boolean(form.active),
           expiresAt: form.expiresAt || null
         });
+        console.log("✅ Flash mis à jour:", updatedFlash);
         setFlashes(prev => prev.map(f => f.id === editing.id ? updatedFlash : f));
         toast({ status: "success", title: "Flash modifié" });
       } else {
         // Create new flash
-        const newFlash = await createFlash({
+        const flashData = {
           id: generateId(),
           message: trimmed,
           category: form.category,
           active: Boolean(form.active),
           expiresAt: form.expiresAt || null
-        });
+        };
+        console.log("➕ Création flash:", flashData);
+        
+        const newFlash = await createFlash(flashData);
+        console.log("✅ Flash créé:", newFlash);
+        
         setFlashes(prev => [newFlash, ...prev]);
         toast({ status: "success", title: "Flash ajouté" });
       }
       setEditing(null);
       manage.onClose();
     } catch (e) {
-      toast({ status: "error", title: "Erreur", description: "Impossible de sauvegarder le flash" });
+      console.error("❌ Erreur sauvegarde flash:", e);
+      toast({ status: "error", title: "Erreur", description: `Impossible de sauvegarder le flash: ${e.message}` });
     }
   };
   
