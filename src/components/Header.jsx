@@ -316,7 +316,7 @@ export default function Header() {
 
       {/* Barre de menus */}
       <Flex bg="white" gap={{ base: 4, md: 8 }} justify="center" align="center" py={3}>
-        <TopNavLink to="/dashboard/retrobus">Accueil</TopNavLink>
+        <TopNavLink to="/dashboard">Accueil</TopNavLink>
         <TopNavLink to="/dashboard/vehicules">Véhicules</TopNavLink>
         <TopNavLink to="/dashboard/myrbe">MyRBE</TopNavLink>
       </Flex>
