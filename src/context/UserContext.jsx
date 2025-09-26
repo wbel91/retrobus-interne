@@ -4,18 +4,18 @@ const UserContext = createContext(null);
 
 // Annuaire minimal
 const DIRECTORY = {
-  "m.ravichandran": { prenom: "Méthusan", nom: "RAVICHANDRAN" },
+  "g.champenois":   { prenom: "Gaëlle",   nom: "CHAMPENOIS" },
+  "n.tetillon":     { prenom: "Nathan",   nom: "TETILLON" },
   "w.belaidi":      { prenom: "Waiyl",    nom: "BELAIDI" },
-  "n.nts":          { prenom: "Nicolas",  nom: "NTS" },
-  "g.champenois":   { prenom: "Gaëlle",  nom: "CHAMPENOIS" },
+  "m.ravichandran": { prenom: "Methusan", nom: "RAVICHANDRAN" },
 };
 
 // Base de données des mots de passe
 const USER_PASSWORDS = {
-  "m.ravichandran": "RBE2025TEST",
-  "w.belaidi":      "RBE2025TEST", 
-  "n.nts":          "RBE2025TEST",
   "g.champenois":   "RBE2025TEST",
+  "n.tetillon":     "RBE2025TEST",
+  "w.belaidi":      "RBE2025TEST", 
+  "m.ravichandran": "RBE2025TEST",
 };
 
 // Liste courte d'administrateurs
