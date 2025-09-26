@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+import { spawn } from 'child_process';
 
 // Définir la variable d'environnement
 process.env.DATABASE_URL = 'file:./prisma/dev.db';
@@ -16,12 +16,12 @@ async function runCommands() {
     console.log(`🚀 Exécution: ${cmd} ${args.join(' ')}`);
     
     await new Promise((resolve, reject) => {
-      const process = spawn(cmd, args, { 
+      const childProcess = spawn(cmd, args, { 
         stdio: 'inherit',
         env: { ...process.env, DATABASE_URL: 'file:./prisma/dev.db' }
       });
       
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         if (code === 0) {
           console.log(`✅ Commande réussie: ${cmd} ${args.join(' ')}`);
           resolve();
