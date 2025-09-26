@@ -14,5 +14,10 @@
   ],
   "env": {
     "DATABASE_URL": "file:./prisma/dev.db"
+  },
+  "functions": {
+    "src/server.js": {
+      "maxDuration": 30
+    }
   }
 }

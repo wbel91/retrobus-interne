@@ -7,7 +7,8 @@
     "dev": "node --watch ./src/server.js",
     "start": "node ./src/server.js",
     "build": "npx prisma generate",
-    "postbuild": "npx prisma db push",
+    "postinstall": "npx prisma generate",
+    "vercel-build": "npx prisma generate && npx prisma db push --accept-data-loss",
     "seed": "node ./prisma/seed.js"
   },
   "dependencies": {

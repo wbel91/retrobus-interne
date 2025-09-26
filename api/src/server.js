@@ -416,7 +416,12 @@ app.get('/retromail/list', async (req,res) => {
 app.use('/retromail/uploads', express.static(path.join(RETRO_DIR,'uploads')));
 app.use('/retromail', express.static(RETRO_DIR));
 
-// ------- ADD THIS: listen so nodemon/node keeps process alive -------
+// ------- Démarrage serveur (local) ou export pour Vercel -------
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`API dispo sur http://localhost:${PORT}`));
-// --------------------------------------------------------------------
+
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => console.log(`API dispo sur http://localhost:${PORT}`));
+}
+
+// Export pour Vercel
+export default app;
