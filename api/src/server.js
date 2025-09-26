@@ -31,7 +31,13 @@ const prisma = new PrismaClient()
 const app = express()
 
 app.use(express.json())
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({ 
+  origin: [
+    'http://localhost:5173',
+    'https://www.retrobus-interne.fr',
+    'https://retrobus-interne.fr'
+  ] 
+}))
 
 // ensure retromail dir exists
 const RETRO_DIR = path.resolve(process.cwd(), 'retromail');

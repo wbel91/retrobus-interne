@@ -1,7 +1,5 @@
 // Configuration de base pour les API
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://VOTRE-API-URL.vercel.app'  // Remplacez par l'URL Vercel de votre API
-  : 'http://localhost:4000'; // Port du serveur API en local
+const API_BASE_URL = 'http://localhost:4000'; // API locale pour les tests
 
 // Instance Axios ou fetch personnalisée
 export const apiClient = {
