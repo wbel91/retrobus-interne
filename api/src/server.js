@@ -1,3 +1,4 @@
+import 'dotenv/config';  // Charge les variables d'environnement
 import express from 'express'
 import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
