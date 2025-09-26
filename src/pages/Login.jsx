@@ -65,10 +65,6 @@ export default function Login() {
         >
           Se connecter
         </Button>
-        <Text fontSize="sm" color="gray.500" textAlign="center">
-          Utilisateurs de test : n.nts, g.champenois, m.ravichandran<br />
-          Mot de passe : RBE2025TEST
-        </Text>
       </VStack>
     </Box>
   )
