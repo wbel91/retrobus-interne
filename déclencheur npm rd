@@ -1,0 +1,13 @@
+cd "C:\Users\belai\OneDrive\Documents\2025 Dev\RETROBUS_ESSONNE\interne\api"
+npm run dev
+
+cd "C:\Users\belai\OneDrive\Documents\2025 Dev\RETROBUS_ESSONNE\interne"
+npm run dev
+
+cd "C:\Users\belai\OneDrive\Documents\2025 Dev\RETROBUS_ESSONNE\externe"
+npm run dev
+
+
+--DECLENCHEUR DE PUSH--
+
+Interne : 

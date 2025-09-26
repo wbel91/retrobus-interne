@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Vehicle {
+  id              Int      @id @default(autoincrement())
+  parc            String   @unique
+  type            String
+  modele          String
+  immat           String?
+  etat            String
+  miseEnCirculation DateTime?
+  energie         String?   // texte libre au lieu d’un enum
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Usage {
+  id         Int      @id @default(autoincrement())
+  parc       String
+  startedAt  DateTime
+  endedAt    DateTime?
+  conducteur String?
+  participants String?    // JSON-encoded array of matricules
+  note       String?
+  relatedTo  Int?         // pour fallback (référence à un autre usage)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Report {
+  id         Int      @id @default(autoincrement())
+  parc       String
+  usageId    Int?      // référence libre à Usage.id si besoin
+  description String?
+  filesMeta  String?   // JSON metadata about files (filename/size/type), on stocke physiquement ailleurs
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
