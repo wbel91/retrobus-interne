@@ -20,8 +20,7 @@ const USER_PASSWORDS = {
 
 // Liste courte d'administrateurs
 const ADMIN_USERS = new Set([
-  "w.belaidi",
-  "g.champenois",
+  "w.belaidi",  // Seul administrateur autorisé
 ]);
 
 // Fonction de validation des identifiants
