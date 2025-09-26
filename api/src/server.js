@@ -539,3 +539,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Export pour Vercel
 export default app;
+
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://retronet-essonne-git-main-assorbes-projects.vercel.app'  // URL réelle
+  : 'http://localhost:4000';
