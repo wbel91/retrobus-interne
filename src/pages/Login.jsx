@@ -1,6 +1,45 @@
 import { useNavigate } from 'react-router-dom'
 import { Box, Button, Input, VStack, Text } from '@chakra-ui/react'
 import { useState } from 'react'
+import { useUser, validateCredentials } from '../context/UserContext'
+
+export default function Login() {
+  const [matricule, setMat] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
+  const { setMatricule } = useUser()
+
+  const handleLogin = () => {
+    if (!matricule.trim() || !password.trim()) {
+      setError("Veuillez remplir tous les champs.")
+      return
+    }
+
+    setLoading(true)
+    setError("")
+
+    // Validation des identifiants
+    const validation = validateCredentials(matricule.trim(), password)
+    
+    if (validation.isValid) {
+      setMatricule(matricule.trim())
+      navigate("/dashboard")
+    } else {
+      setError(validation.error)
+    }
+    
+    setLoading(false)
+  }
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleLogin()
+    }
+  } } from 'react-router-dom'
+import { Box, Button, Input, VStack, Text } from '@chakra-ui/react'
+import { useState } from 'react'
 import { useUser } from '../context/UserContext'
 
 export default function Login() {

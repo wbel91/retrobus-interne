@@ -1,18 +1,43 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+﻿import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const UserContext = createContext(null);
 
-// Annuaire minimal (tu pourras l’étendre)
+// Annuaire minimal
 const DIRECTORY = {
   "m.ravichandran": { prenom: "Méthusan", nom: "RAVICHANDRAN" },
   "w.belaidi":      { prenom: "Waiyl",    nom: "BELAIDI" },
+  "n.nts":          { prenom: "Nicolas",  nom: "NTS" },
+  "g.champenois":   { prenom: "Gaëlle",  nom: "CHAMPENOIS" },
 };
 
-// Liste courte d'administrateurs (matricules)
+// Base de données des mots de passe
+const USER_PASSWORDS = {
+  "m.ravichandran": "RBE2025TEST",
+  "w.belaidi":      "RBE2025TEST", 
+  "n.nts":          "RBE2025TEST",
+  "g.champenois":   "RBE2025TEST",
+};
+
+// Liste courte d'administrateurs
 const ADMIN_USERS = new Set([
-  "w.belaidi",           // toi (exemple)
-  // ajoute d'autres matricules si besoin
+  "w.belaidi",
+  "g.champenois",
 ]);
+
+// Fonction de validation des identifiants
+export const validateCredentials = (matricule, password) => {
+  const normalizedMatricule = String(matricule || "").toLowerCase();
+  
+  if (!DIRECTORY[normalizedMatricule]) {
+    return { isValid: false, error: "Utilisateur non trouvé" };
+  }
+  
+  if (USER_PASSWORDS[normalizedMatricule] !== password) {
+    return { isValid: false, error: "Mot de passe incorrect" };
+  }
+  
+  return { isValid: true, error: null };
+};
 
 export function UserProvider({ children }) {
   const [matricule, setMatricule] = useState(() => localStorage.getItem("matricule") || "");
@@ -21,7 +46,6 @@ export function UserProvider({ children }) {
     if (matricule) localStorage.setItem("matricule", matricule);
   }, [matricule]);
 
-  // Dérive prénom/nom depuis l’annuaire (fallbacks propres)
   const { prenom, nom } = useMemo(() => {
     const key = String(matricule || "").toLowerCase();
     const entry = DIRECTORY[key];
@@ -31,7 +55,6 @@ export function UserProvider({ children }) {
     };
   }, [matricule]);
 
-  // boolean rapide pour savoir si l'utilisateur est admin
   const isAdmin = useMemo(() => {
     if (!matricule) return false;
     return ADMIN_USERS.has(String(matricule).toLowerCase());
@@ -48,4 +71,3 @@ export function UserProvider({ children }) {
 export function useUser() {
   return useContext(UserContext);
 }
-

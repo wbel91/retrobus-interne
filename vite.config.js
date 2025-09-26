@@ -5,10 +5,11 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    historyApiFallback: {
-      rewrites: [
-        { from: /^\/(?!api).*/, to: '/index.html' }
-      ]
-    }
+    open: true,
+    historyApiFallback: true
+  },
+  preview: {
+    open: true,
+    historyApiFallback: true
   }
 })

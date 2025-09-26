@@ -1,4 +1,4 @@
-import { Box, Flex } from '@chakra-ui/react'
+import { Box } from '@chakra-ui/react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Vehicules from './Vehicules'
@@ -11,18 +11,11 @@ import MyRBE from './MyRBE';
 import MyRBEActions from './MyRBEActions';
 import DashboardHome from './DashboardHome';
 import RetroMail from './RetroMail';
-import TopNavLink from '../components/TopNavLink';
 
 export default function Dashboard() {
   return (
     <Box>
       <Header />
-
-      <Flex bg="white" gap={{ base: 4, md: 8 }} justify="center" align="center" py={3}>
-        <TopNavLink to="/dashboard/retrobus">Accueil</TopNavLink>
-        <TopNavLink to="/dashboard/vehicules">Véhicules</TopNavLink>
-        <TopNavLink to="/dashboard/myrbe">MyRBE</TopNavLink>
-      </Flex>
 
       <Routes>
         <Route index element={<DashboardHome />} />
