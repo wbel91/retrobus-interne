@@ -11,10 +11,10 @@ import Vehicules from "./pages/Vehicules";
 import VehiculeAdd from "./pages/VehiculeAdd";
 import VehiculeShow from "./pages/VehiculeShow";
 import Adhesion from "./pages/Adhesion";
-import Retromail from "./pages/Retromail";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
 import PrestaEvenements from "./pages/PrestaEvenements";
+import Retromail from "./pages/Retromail";
 
 export default function App() {
   return (
@@ -29,12 +29,10 @@ export default function App() {
         <Route path="/dashboard/vehicules/ajouter" element={<VehiculeAdd />} />
         <Route path="/dashboard/vehicules/:parc" element={<VehiculeShow />} />
         <Route path="/adhesion" element={<Adhesion />} />
-        <Route path="/retromail" element={<Retromail />} />
         <Route path="/login" element={<Login />} />
         <Route path="/mobile/v/:parc" element={<MobileVehicle />} />
         <Route path="/presta-evenements" element={<PrestaEvenements />} />
+        <Route path="/retromail" element={<Retromail />} />
         <Route path="*" element={<DashboardHome />} />
       </Routes>
-    </>
-  );
-}
+    </>  );}
