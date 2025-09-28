@@ -4,7 +4,6 @@
     /* Base */
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "module": "ESNext",
     "moduleResolution": "NodeNext",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["node", "react", "react-dom"],

@@ -1,5 +1,5 @@
 import { Link as RouterLink, useLocation } from 'react-router-dom';
-import { Link } from '@chakra-ui/react';
+import { Link, Flex } from '@chakra-ui/react';
 import React from 'react';
 
 /**
@@ -40,5 +40,17 @@ export default function TopNavLink({ to, exact = false, children }) {
     >
       {children}
     </Link>
+  );
+}
+
+export function Navigation() {
+  return (
+    <Flex bg="white" gap={{ base: 4, md: 8 }} justify="center" align="center" py={3}>
+      <TopNavLink to="/dashboard">Accueil</TopNavLink>
+      <TopNavLink to="/dashboard/vehicules">Véhicules</TopNavLink>
+      <TopNavLink to="/dashboard/myrbe">MyRBE</TopNavLink>
+      <TopNavLink to="/dashboard/retromerch">RétroMerch</TopNavLink>
+      <TopNavLink to="/dashboard/events">Events</TopNavLink>
+    </Flex>
   );
 }

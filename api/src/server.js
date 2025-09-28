@@ -30,6 +30,90 @@ const uploadReport = multer({
 const prisma = new PrismaClient()
 const app = express()
 
+// Configuration de synchronisation avec le site public
+const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || 'https://www.association-rbe.fr/api';
+const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY; // Clé d'API pour authentifier les requêtes
+
+// Fonction pour synchroniser un véhicule avec le site public
+async function syncVehicleToPublic(vehicleData, action = 'update') {
+  if (!PUBLIC_API_KEY) {
+    console.warn('PUBLIC_API_KEY non configurée - synchronisation désactivée');
+    return { success: false, reason: 'No API key' };
+  }
+
+  try {
+    const url = `${PUBLIC_API_BASE}/vehicles/${vehicleData.parc}`;
+    const options = {
+      method: action === 'delete' ? 'DELETE' : 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PUBLIC_API_KEY}`,
+        'User-Agent': 'RBE-Intranet-Sync/1.0'
+      }
+    };
+
+    if (action !== 'delete') {
+      options.body = JSON.stringify({
+        parc: vehicleData.parc,
+        immat: vehicleData.immat,
+        modele: vehicleData.modele,
+        type: vehicleData.type,
+        etat: vehicleData.etat,
+        energie: vehicleData.energie,
+        miseEnCirculation: vehicleData.miseEnCirculation,
+        // Données supplémentaires pour le site public
+        publique: true, // Marquer comme visible publiquement
+        synced_from: 'intranet',
+        last_sync: new Date().toISOString()
+      });
+    }
+
+    const response = await fetch(url, options);
+    
+    if (response.ok) {
+      console.log(`✅ Véhicule ${vehicleData.parc} synchronisé avec le site public (${action})`);
+      return { success: true, action, parc: vehicleData.parc };
+    } else {
+      const errorText = await response.text();
+      console.error(`❌ Erreur sync véhicule ${vehicleData.parc}:`, response.status, errorText);
+      return { success: false, error: errorText, status: response.status };
+    }
+  } catch (error) {
+    console.error(`❌ Erreur réseau sync véhicule ${vehicleData.parc}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// Fonction pour synchroniser tous les véhicules (utile pour la migration initiale)
+async function syncAllVehiclesToPublic() {
+  try {
+    const vehicles = await prisma.vehicle.findMany({
+      where: {
+        // Synchroniser seulement les véhicules "publics" (pas les brouillons)
+        etat: { in: ['Service', 'Préservé'] }
+      }
+    });
+
+    console.log(`🔄 Début synchronisation de ${vehicles.length} véhicules vers le site public...`);
+    
+    const results = [];
+    for (const vehicle of vehicles) {
+      const result = await syncVehicleToPublic(vehicle, 'update');
+      results.push(result);
+      // Petite pause pour éviter de surcharger l'API publique
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    const successful = results.filter(r => r.success).length;
+    console.log(`✅ Synchronisation terminée: ${successful}/${vehicles.length} véhicules synchronisés`);
+    
+    return results;
+  } catch (error) {
+    console.error('❌ Erreur lors de la synchronisation globale:', error);
+    return [];
+  }
+}
+
 app.use(express.json())
 app.use(cors({ 
   origin: [
@@ -153,24 +237,136 @@ app.get('/vehicles/export.csv', async (_req, res) => {
   res.send(csv);
 });
 
-// Mettre à jour un véhicule (etat, immat, energie, miseEnCirculation)
+// Mettre à jour un véhicule (etat, immat, energie, miseEnCirculation, modele, type)
 app.put('/vehicles/:parc', async (req, res) => {
   try {
     const { parc } = req.params;
-    const { etat, immat, energie, miseEnCirculation } = req.body || {};
+    const { etat, immat, energie, miseEnCirculation, modele, type } = req.body || {};
     const data = {};
     if (etat) data.etat = etat;
     if (typeof immat !== 'undefined') data.immat = immat || null;
     if (typeof energie !== 'undefined') data.energie = energie || null;
+    if (typeof modele !== 'undefined') data.modele = modele || null;
+    if (typeof type !== 'undefined') data.type = type || null;
     if (typeof miseEnCirculation !== 'undefined')
       data.miseEnCirculation = miseEnCirculation ? new Date(miseEnCirculation) : null;
 
-    const v = await prisma.vehicle.update({ where: { parc }, data });
-    res.json(v);
+    // Mettre à jour en base locale
+    const updatedVehicle = await prisma.vehicle.update({ where: { parc }, data });
+    
+    // Synchronisation automatique avec le site public (asynchrone)
+    if (updatedVehicle.etat === 'Service' || updatedVehicle.etat === 'Préservé') {
+      // Synchroniser seulement les véhicules visibles publiquement
+      syncVehicleToPublic(updatedVehicle, 'update').catch(error => {
+        console.error(`Erreur sync véhicule ${parc}:`, error);
+      });
+    }
+    
+    res.json({
+      ...updatedVehicle,
+      _syncStatus: 'pending' // Indiquer que la sync est en cours
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Update failed' });
   }
+});
+
+// Supprimer un véhicule
+app.delete('/vehicles/:parc', requireCreator, async (req, res) => {
+  try {
+    const { parc } = req.params;
+    
+    // Vérifier si le véhicule existe
+    const vehicle = await prisma.vehicle.findUnique({ where: { parc } });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Véhicule introuvable' });
+    }
+    
+    // Supprimer d'abord tous les éléments liés (cascade)
+    await prisma.$transaction([
+      // Supprimer les usages
+      prisma.usage.deleteMany({ where: { parc } }),
+      // Supprimer les événements
+      prisma.event.deleteMany({ where: { parc } }),
+      // Supprimer le véhicule
+      prisma.vehicle.delete({ where: { parc } })
+    ]);
+    
+    // Synchronisation de la suppression avec le site public (asynchrone)
+    syncVehicleToPublic(vehicle, 'delete').catch(error => {
+      console.error(`Erreur sync suppression véhicule ${parc}:`, error);
+    });
+    
+    res.json({ 
+      message: 'Véhicule supprimé avec succès',
+      _syncStatus: 'pending'
+    });
+  } catch (e) {
+    console.error('Erreur suppression véhicule:', e);
+    res.status(500).json({ error: 'Impossible de supprimer le véhicule' });
+  }
+});
+
+// === ENDPOINTS DE SYNCHRONISATION ===
+
+// Synchroniser tous les véhicules avec le site public
+app.post('/sync/vehicles/all', requireCreator, async (req, res) => {
+  try {
+    console.log('🔄 Début synchronisation manuelle de tous les véhicules...');
+    const results = await syncAllVehiclesToPublic();
+    
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    
+    res.json({
+      message: `Synchronisation terminée`,
+      total: results.length,
+      successful,
+      failed,
+      details: results
+    });
+  } catch (error) {
+    console.error('Erreur synchronisation globale:', error);
+    res.status(500).json({ error: 'Erreur lors de la synchronisation' });
+  }
+});
+
+// Synchroniser un véhicule spécifique avec le site public
+app.post('/sync/vehicles/:parc', requireCreator, async (req, res) => {
+  try {
+    const { parc } = req.params;
+    
+    // Récupérer le véhicule
+    const vehicle = await prisma.vehicle.findUnique({ where: { parc } });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Véhicule introuvable' });
+    }
+    
+    // Synchroniser
+    const result = await syncVehicleToPublic(vehicle, 'update');
+    
+    res.json({
+      message: `Synchronisation du véhicule ${parc}`,
+      success: result.success,
+      details: result
+    });
+  } catch (error) {
+    console.error(`Erreur sync véhicule ${req.params.parc}:`, error);
+    res.status(500).json({ error: 'Erreur lors de la synchronisation' });
+  }
+});
+
+// Vérifier le statut de la synchronisation
+app.get('/sync/status', requireCreator, async (req, res) => {
+  res.json({
+    publicApiConfigured: !!PUBLIC_API_KEY,
+    publicApiBase: PUBLIC_API_BASE,
+    timestamp: new Date().toISOString(),
+    message: PUBLIC_API_KEY 
+      ? 'Synchronisation activée' 
+      : 'Synchronisation désactivée (PUBLIC_API_KEY manquante)'
+  });
 });
 
 // Création d'un usage (pointage start)

@@ -3,7 +3,7 @@ import {
   Box, Flex, Heading, Text, Input, Spinner, Center, VStack, HStack, Button,
   SimpleGrid, Card, CardHeader, CardBody, IconButton, Badge, useToast, Image, Divider
 } from "@chakra-ui/react";
-import { useUser } from "../context/UserContext";
+import { useUser } from "../context/UserContext.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 

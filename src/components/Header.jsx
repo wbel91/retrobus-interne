@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box, Flex, Image, Link, Menu, MenuButton, MenuItem, MenuList, Text,
+  Box, Image, Menu, MenuButton, MenuItem, MenuList, Text,
   IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton,
   ModalBody, ModalFooter, Textarea, Switch, FormControl, FormLabel, Button,
   useDisclosure, useToast, HStack, Badge, VStack, Stack, Select,
@@ -13,8 +13,8 @@ import logo from "../assets/retro_intranet_essonne.svg";
 import infoPng from "../assets/icons/flash-info.png";
 import notifPng from "../assets/icons/flash-notif.png";
 import posPng from "../assets/icons/flash-pos.png";
+import { Navigation } from './TopNavLink'; // Import uniquement Navigation
 
-/** Couleurs type Windows (utilisées pour le dégradé) */
 const WIN = {
   red:    "#2e538d",
   yellow: "#2e538d",
@@ -22,94 +22,52 @@ const WIN = {
   blue:   "#bb1f11",
 };
 
-/** Couleurs / mapping catégorie -> tokens et petites variantes */
 const CATEGORY = {
   INFO: { key: "INFO", label: "Flash Infos", color: { bg: "red.50", border: "red.300", text: "red.800", accent: "#bb1f11" } },
   NOTIF: { key: "NOTIF", label: "Flash Notifications", color: { bg: "orange.50", border: "orange.300", text: "orange.800", accent: "#d97706" } },
   POS: { key: "POS", label: "Flash Positif", color: { bg: "green.50", border: "green.300", text: "green.900", accent: "#16a34a" } },
 };
 
-const HEADER_H = "80px";   // hauteur visible du bandeau
-const LOGO_H   = "110px";  // taille du logo
+const HEADER_H = "80px";
+const LOGO_H   = "110px";
 
-// localStorage keys
-const ANN_KEY = "rbe:announcements"; // stores array of flashes
-const DISMISS_KEY_PREFIX = "rbe:announcements:dismissed:"; // + matricule -> map { [flashId]: timestampMs }
+const ANN_KEY = "rbe:announcements";
+const DISMISS_KEY_PREFIX = "rbe:announcements:dismissed:";
 
-/* helpers */
 function generateId() { return `flash-${Date.now()}-${Math.floor(Math.random()*1000)}`; }
 
-// Fonctions pour l'API (remplacent localStorage)
 async function loadFlashes() {
   try {
     const response = await flashAPI.getAll();
-    console.log("🔄 loadFlashes response:", response);
-    // L'API renvoie directement le JSON, pas response.data
     return Array.isArray(response) ? response : [];
   } catch (e) {
-    console.warn("Failed to load flashes from API", e);
     return [];
   }
 }
-
 async function createFlash(flashData) {
-  try {
-    const response = await flashAPI.create(flashData);
-    console.log("🔄 createFlash response:", response);
-    // L'API renvoie directement le JSON, pas response.data
-    return response;
-  } catch (e) {
-    console.error("Failed to create flash", e);
-    throw e;
-  }
+  try { return await flashAPI.create(flashData); } catch (e) { throw e; }
 }
-
 async function updateFlash(id, flashData) {
-  try {
-    const response = await flashAPI.update(id, flashData);
-    console.log("🔄 updateFlash response:", response);
-    // L'API renvoie directement le JSON, pas response.data
-    return response;
-  } catch (e) {
-    console.error("Failed to update flash", e);
-    throw e;
-  }
+  try { return await flashAPI.update(id, flashData); } catch (e) { throw e; }
 }
-
 async function deleteFlash(id) {
-  try {
-    await flashAPI.delete(id);
-    return true;
-  } catch (e) {
-    console.error("Failed to delete flash", e);
-    throw e;
-  }
+  try { await flashAPI.delete(id); return true; } catch (e) { throw e; }
 }
 
-/* dismissed storage as a map { flashId: timestampMs } per user */
 function loadDismissedMap(matricule) {
   if (!matricule) return {};
   try {
     const raw = localStorage.getItem(DISMISS_KEY_PREFIX + matricule);
     return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
+  } catch (e) { return {}; }
 }
 function saveDismissedMap(matricule, map) {
   if (!matricule) return;
-  try {
-    localStorage.setItem(DISMISS_KEY_PREFIX + matricule, JSON.stringify(map || {}));
-  } catch (e) { /* ignore */ }
+  try { localStorage.setItem(DISMISS_KEY_PREFIX + matricule, JSON.stringify(map || {})); } catch (e) {}
 }
 
-const ICON_MAP = {
-  INFO: infoPng,
-  NOTIF: notifPng,
-  POS: posPng,
-};
+const ICON_MAP = { INFO: infoPng, NOTIF: notifPng, POS: posPng };
 
-/* small badge for category (shows PNG + accessible label) */
 function CategoryBadge({ catKey }) {
   const cat = Object.values(CATEGORY).find(c => c.key === catKey) || CATEGORY.INFO;
   const src = ICON_MAP[catKey] || ICON_MAP.INFO;
@@ -123,7 +81,6 @@ function CategoryBadge({ catKey }) {
   );
 }
 
-/* Small icons: megaphone (admin) and bell (all) */
 function MegaphoneIcon(props) {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" {...props}>
@@ -143,25 +100,20 @@ export default function Header() {
   const { prenom, isAdmin, matricule } = useUser();
   const toast = useToast();
 
-  // modal controls
-  const manage = useDisclosure(); // admin megaphone manage modal
-  const viewer = useDisclosure(); // viewer modal (for bell for non-admins or to view all)
+  const manage = useDisclosure();
+  const viewer = useDisclosure();
 
   const [flashes, setFlashes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null); // flash object being edited or null
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ message: "", category: "INFO", active: true, expiresAt: "" });
 
-  // Charger les flashs depuis l'API au montage
   useEffect(() => {
     async function fetchFlashes() {
       try {
         setLoading(true);
         const flashesFromAPI = await loadFlashes();
         setFlashes(flashesFromAPI);
-      } catch (e) {
-        console.error("Failed to load flashes:", e);
-        toast({ status: "error", title: "Erreur", description: "Impossible de charger les flashs" });
       } finally {
         setLoading(false);
       }
@@ -169,16 +121,12 @@ export default function Header() {
     fetchFlashes();
   }, [toast]);
 
-  // compute active flashes (filter by active and expiry)
   const now = Date.now();
   const activeFlashes = useMemo(() => {
     return flashes.filter(f => f && f.active && (!f.expiresAt || new Date(f.expiresAt).getTime() > now));
   }, [flashes, now]);
-
-  // Only urgent (INFO) flashes are shown on the site as banners
   const bannerFlashes = useMemo(() => activeFlashes.filter(f => f.category === "INFO"), [activeFlashes]);
 
-  // unread/ack logic: per-user map { id: timestampMs } — unread if no entry OR entry < flash.updatedAt
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
     const map = loadDismissedMap(matricule || "anon");
@@ -188,12 +136,8 @@ export default function Header() {
       return acc + (ackTs >= updatedTs ? 0 : 1);
     }, 0);
     setUnreadCount(count);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flashes, matricule, activeFlashes.length]);
 
-  // persist flashes removed - now handled by API
-
-  // handlers for admin create / edit / delete / activate
   const openNew = () => {
     setEditing(null);
     setForm({ message: "", category: "INFO", active: true, expiresAt: "" });
@@ -213,24 +157,17 @@ export default function Header() {
     const trimmed = (form.message || "").trim();
     if (!trimmed) return toast({ status: "warning", title: "Le message est requis" });
     if (!["INFO","NOTIF","POS"].includes(form.category)) form.category = "INFO";
-    
     try {
-      console.log("🔧 Début sauvegarde flash:", { editing, form });
-      
       if (editing) {
-        // Update existing flash
-        console.log("📝 Mise à jour flash:", editing.id);
         const updatedFlash = await updateFlash(editing.id, {
           message: trimmed,
           category: form.category,
           active: Boolean(form.active),
           expiresAt: form.expiresAt || null
         });
-        console.log("✅ Flash mis à jour:", updatedFlash);
         setFlashes(prev => prev.map(f => f.id === editing.id ? updatedFlash : f));
         toast({ status: "success", title: "Flash modifié" });
       } else {
-        // Create new flash
         const flashData = {
           id: generateId(),
           message: trimmed,
@@ -238,25 +175,18 @@ export default function Header() {
           active: Boolean(form.active),
           expiresAt: form.expiresAt || null
         };
-        console.log("➕ Création flash:", flashData);
-        
         const newFlash = await createFlash(flashData);
-        console.log("✅ Flash créé:", newFlash);
-        
         setFlashes(prev => [newFlash, ...prev]);
         toast({ status: "success", title: "Flash ajouté" });
       }
       setEditing(null);
       manage.onClose();
     } catch (e) {
-      console.error("❌ Erreur sauvegarde flash:", e);
       toast({ status: "error", title: "Erreur", description: `Impossible de sauvegarder le flash: ${e.message}` });
     }
   };
-  
   const doDelete = async (id) => {
     if (!confirm("Supprimer ce flash ?")) return;
-    
     try {
       await deleteFlash(id);
       setFlashes(prev => prev.filter(f => f.id !== id));
@@ -265,35 +195,25 @@ export default function Header() {
       toast({ status: "error", title: "Erreur", description: "Impossible de supprimer le flash" });
     }
   };
-  
   const toggleActive = async (id) => {
     try {
       const flash = flashes.find(f => f.id === id);
       if (!flash) return;
-      
-      const updatedFlash = await updateFlash(id, {
-        active: !flash.active
-      });
-      
+      const updatedFlash = await updateFlash(id, { active: !flash.active });
       setFlashes(prev => prev.map(f => f.id === id ? updatedFlash : f));
     } catch (e) {
       toast({ status: "error", title: "Erreur", description: "Impossible de modifier le flash" });
     }
   };
-
-  // Acknowledge for current user (mark as 'prise de connaissance' using timestamp)
   const acknowledgeForUser = (id) => {
     const key = matricule || "anon";
     const map = loadDismissedMap(key);
     const nowMs = Date.now();
     map[id] = nowMs;
     saveDismissedMap(key, map);
-    // recompute unreadCount locally (simple decrement)
     setUnreadCount(prev => Math.max(0, prev - 1));
     toast({ status: "info", title: "Prise de connaissance enregistrée" });
   };
-
-  // quick mapping for banner style
   const bannerStyle = (catKey) => {
     const cat = Object.values(CATEGORY).find(c => c.key === catKey) || CATEGORY.INFO;
     return {
@@ -304,7 +224,6 @@ export default function Header() {
     };
   };
 
-  // render
   return (
     <Box as="header" w="100%" bg="white" position="sticky" top="0" zIndex="1000" borderBottom="1px solid #3a3a3aff">
       <Box position="relative" h={HEADER_H} overflow="visible">
@@ -381,25 +300,27 @@ export default function Header() {
             </Tooltip>
 
             <Menu>
-              <MenuButton px={3} py={2} borderRadius="md" _hover={{ bg: "whiteAlpha.300" }}>
-                <Text color="white">Bonjour{prenom ? `, ${prenom}` : ""}</Text>
+              <MenuButton as={Button} colorScheme="red">
+                Bonjour, {prenom}
               </MenuButton>
               <MenuList>
-                <MenuItem as={RouterLink} to="/dashboard/mon-profil">Mon Adhésion</MenuItem>
-                <MenuItem as={RouterLink} to="/dashboard/retromail">RétroMail</MenuItem>
-                <MenuItem as={RouterLink} to="/">Déconnexion</MenuItem>
+                <MenuItem as={RouterLink} to="/adhesion">
+                  Mon Adhésion
+                </MenuItem>
+                <MenuItem as={RouterLink} to="/retromail">
+                  RétroMail
+                </MenuItem>
+                <MenuItem>
+                  Déconnexion
+                </MenuItem>
               </MenuList>
             </Menu>
           </HStack>
         </Box>
       </Box>
 
-      {/* Barre de menus */}
-      <Flex bg="white" gap={{ base: 4, md: 8 }} justify="center" align="center" py={3}>
-        <TopNavLink to="/dashboard">Accueil</TopNavLink>
-        <TopNavLink to="/dashboard/vehicules">Véhicules</TopNavLink>
-        <TopNavLink to="/dashboard/myrbe">MyRBE</TopNavLink>
-      </Flex>
+      {/* Barre de navigation */}
+      <Navigation />
 
       {/* Banners: render only urgent (INFO) active flashes as site banners */}
       <Box>
@@ -407,19 +328,16 @@ export default function Header() {
           const s = bannerStyle(f.category);
           return (
             <Box key={f.id} bg={s.bg} borderTop="2px solid" borderColor={s.borderColor || s.border} py={2} px={4}>
-              <Flex align="center" maxW="1100px" mx="auto" gap={4} justify="center">
-                <HStack spacing={3} flex="1" align="center">
-                  <Box>
-                    <CategoryBadge catKey={f.category} />
-                  </Box>
-                  <Box>
-                    <Text fontSize={{ base: "sm", md: "md" }} color={s.color}>
-                      {f.message}
-                    </Text>
-                    <Text fontSize="xs" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
-                  </Box>
-                </HStack>
-
+              <HStack spacing={3} flex="1" align="center">
+                <Box>
+                  <CategoryBadge catKey={f.category} />
+                </Box>
+                <Box>
+                  <Text fontSize={{ base: "sm", md: "md" }} color={s.color}>
+                    {f.message}
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
+                </Box>
                 <Box>
                   {isAdmin ? (
                     <HStack spacing={2}>
@@ -433,7 +351,7 @@ export default function Header() {
                     <Button size="sm" onClick={() => acknowledgeForUser(f.id)}>Prendre connaissance</Button>
                   )}
                 </Box>
-              </Flex>
+              </HStack>
             </Box>
           );
         })}
@@ -450,20 +368,14 @@ export default function Header() {
               {activeFlashes.length === 0 && <Text color="gray.600">Aucun flash en cours.</Text>}
               {activeFlashes.map(f => (
                 <Box key={f.id} p={3} borderWidth="1px" borderRadius="md" bg="white">
-                  <Flex align="center" justify="space-between">
-                    <Box>
-                      <HStack spacing={2}>
-                        <CategoryBadge catKey={f.category} />
-                        <Text fontWeight="600">{f.message}</Text>
-                      </HStack>
-                      <Text fontSize="sm" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
-                    </Box>
-                    <Box>
-                      <Button size="sm" onClick={() => { acknowledgeForUser(f.id); }}>
-                        Prendre connaissance
-                      </Button>
-                    </Box>
-                  </Flex>
+                  <HStack spacing={2} align="center">
+                    <CategoryBadge catKey={f.category} />
+                    <Text fontWeight="600">{f.message}</Text>
+                  </HStack>
+                  <Text fontSize="sm" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
+                  <Button size="sm" onClick={() => { acknowledgeForUser(f.id); }}>
+                    Prendre connaissance
+                  </Button>
                 </Box>
               ))}
             </VStack>
@@ -493,20 +405,16 @@ export default function Header() {
                 const s = bannerStyle(f.category);
                 return (
                   <Box key={f.id} p={3} borderWidth="1px" borderRadius="md" bg={s.bg}>
-                    <Flex align="center" justify="space-between">
-                      <Box>
-                        <HStack spacing={2}>
-                          <CategoryBadge catKey={f.category} />
-                          <Text fontWeight="600">{f.message}</Text>
-                        </HStack>
-                        <Text fontSize="sm" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
-                      </Box>
-                      <HStack spacing={2}>
-                        <Button size="sm" onClick={() => startEdit(f)}>Éditer</Button>
-                        <Button size="sm" onClick={() => toggleActive(f.id)}>{f.active ? "Désactiver" : "Activer"}</Button>
-                        <Button size="sm" colorScheme="red" onClick={() => doDelete(f.id)}>Supprimer</Button>
-                      </HStack>
-                    </Flex>
+                    <HStack spacing={2} align="center">
+                      <CategoryBadge catKey={f.category} />
+                      <Text fontWeight="600">{f.message}</Text>
+                    </HStack>
+                    <Text fontSize="sm" color="gray.500">{f.createdAt ? `Publié: ${new Date(f.createdAt).toLocaleString()}` : ""}</Text>
+                    <HStack spacing={2}>
+                      <Button size="sm" onClick={() => startEdit(f)}>Éditer</Button>
+                      <Button size="sm" onClick={() => toggleActive(f.id)}>{f.active ? "Désactiver" : "Activer"}</Button>
+                      <Button size="sm" colorScheme="red" onClick={() => doDelete(f.id)}>Supprimer</Button>
+                    </HStack>
                   </Box>
                 );
               })}
@@ -539,12 +447,11 @@ export default function Header() {
                     style={{ width: "100%", padding: "8px", borderRadius: 6, border: "1px solid #e2e8f0" }}
                   />
                 </FormControl>
-                <Flex gap={2} justify="flex-end">
+                <HStack gap={2} justify="flex-end">
                   <Button variant="ghost" onClick={() => { setEditing(null); setForm({ message: "", category: "INFO", active: true, expiresAt: "" }); }}>Réinitialiser</Button>
                   <Button colorScheme="blue" onClick={doSave}>{editing ? "Sauvegarder" : "Créer"}</Button>
-                </Flex>
+                </HStack>
               </Box>
-
             </VStack>
           </ModalBody>
           <ModalFooter>
@@ -552,22 +459,7 @@ export default function Header() {
           </ModalFooter>
         </ModalContent>
       </Modal>
+    {/* END of modals */}
     </Box>
-  );
-}
-
-function TopNavLink({ to, children }) {
-  return (
-    <Link
-      as={RouterLink}
-      to={to}
-      fontWeight="600"
-      px={3}
-      py={1.5}
-      borderRadius="md"
-      _hover={{ bg: "blackAlpha.50" }}
-    >
-      {children}
-    </Link>
   );
 }

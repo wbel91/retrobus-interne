@@ -7,9 +7,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    historyApiFallback: true
   },
   build: {
     outDir: 'dist'
+  },
+  // Configuration pour les routes SPA
+  preview: {
+    port: 5173,
   }
 })

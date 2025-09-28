@@ -15,8 +15,6 @@ import RetroMail from './RetroMail';
 export default function Dashboard() {
   return (
     <Box>
-      <Header />
-
       <Routes>
         <Route index element={<DashboardHome />} />
         <Route path="retrobus" element={<Navigate to="." replace />} />

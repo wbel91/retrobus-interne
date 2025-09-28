@@ -1,16 +1,16 @@
-ï»¿import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const UserContext = createContext(null);
 
 // Annuaire minimal
 const DIRECTORY = {
-  "g.champenois":   { prenom: "GaÃ«lle",   nom: "CHAMPENOIS" },
+  "g.champenois":   { prenom: "Gaëlle",   nom: "CHAMPENOIS" },
   "n.tetillon":     { prenom: "Nathan",   nom: "TETILLON" },
   "w.belaidi":      { prenom: "Waiyl",    nom: "BELAIDI" },
   "m.ravichandran": { prenom: "Methusan", nom: "RAVICHANDRAN" },
 };
 
-// Base de donnÃ©es des mots de passe
+// Base de données des mots de passe
 const USER_PASSWORDS = {
   "g.champenois":   "RBE2025TEST",
   "n.tetillon":     "RBE2025TEST",
@@ -20,7 +20,7 @@ const USER_PASSWORDS = {
 
 // Liste courte d'administrateurs
 const ADMIN_USERS = new Set([
-  "w.belaidi",  // Seul administrateur autorisÃ©
+  "w.belaidi",  // Seul administrateur autorisé
 ]);
 
 // Fonction de validation des identifiants
@@ -28,7 +28,7 @@ export const validateCredentials = (matricule, password) => {
   const normalizedMatricule = String(matricule || "").toLowerCase();
   
   if (!DIRECTORY[normalizedMatricule]) {
-    return { isValid: false, error: "Utilisateur non trouvÃ©" };
+    return { isValid: false, error: "Utilisateur non trouvé" };
   }
   
   if (USER_PASSWORDS[normalizedMatricule] !== password) {

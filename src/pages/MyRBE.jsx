@@ -1,56 +1,65 @@
 import React from "react";
 import {
-  Container,
-  Heading,
-  Text,
-  SimpleGrid,
   Box,
-  Stat,
-  StatLabel,
-  StatNumber,
-  StatHelpText,
+  Heading,
+  HStack,
+  Image,
+  SimpleGrid,
+  Card,
+  CardBody,
+  CardHeader,
+  Text,
 } from "@chakra-ui/react";
+import { Link as RouterLink } from "react-router-dom";
+import myRbeLogo from "../assets/rbe_logo.svg";
+
+const cards = [
+  {
+    title: "Gestion administrative et financières",
+    to: "/admin",
+    color: "red.100",
+  },
+  {
+    title: "Presta/Évènements",
+    to: "/presta-evenements",
+    color: "green.100",
+  },
+  {
+    title: "Gérer les adhésions",
+    to: "/adhesion",
+    color: "blue.100",
+  },
+];
 
 export default function MyRBE() {
-  // Ces valeurs peuvent être récupérées dynamiquement plus tard
-  const stats = [
-    {
-      label: "Interventions planifiées",
-      value: 3,
-      help: "à venir cette semaine",
-    },
-    {
-      label: "Anomalies signalées",
-      value: 7,
-      help: "en attente de traitement",
-    },
-    { label: "Pointages récents", value: 12, help: "ce mois-ci" },
-  ];
-
   return (
-    <Container maxW="4xl" py={10}>
-      <Heading as="h1" size="2xl" mb={6}>
-        Synthèse MyRBE
-      </Heading>
-      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={8}>
-        {stats.map((s, i) => (
-          <Stat
-            key={i}
-            p={4}
-            border="1px solid #eee"
-            borderRadius="md"
-            bg="gray.50"
+    <Box p={8}>
+      <HStack spacing={4} mb={8}>
+        <Heading as="h1" size="lg">
+          Bienvenue sur l'espace
+        </Heading>
+        <Image src={myRbeLogo} alt="Logo My RBE" height="48px" />
+      </HStack>
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
+        {cards.map((card) => (
+          <Card
+            as={RouterLink}
+            to={card.to}
+            key={card.title}
+            bg={card.color}
+            _hover={{ boxShadow: "lg", transform: "scale(1.03)" }}
+            transition="all 0.2s"
+            cursor="pointer"
           >
-            <StatLabel>{s.label}</StatLabel>
-            <StatNumber>{s.value}</StatNumber>
-            <StatHelpText>{s.help}</StatHelpText>
-          </Stat>
+            <CardHeader>
+              <Heading size="md">{card.title}</Heading>
+            </CardHeader>
+            <CardBody>
+              <Text>Accéder à la gestion</Text>
+            </CardBody>
+          </Card>
         ))}
       </SimpleGrid>
-      <Text fontSize="md" opacity={0.7}>
-        Retrouvez ici un aperçu de vos actions récentes et des statistiques
-        globales.
-      </Text>
-    </Container>
+    </Box>
   );
 }
