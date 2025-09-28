@@ -14,7 +14,7 @@ import Adhesion from "./pages/Adhesion";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
 import PrestaEvenements from "./pages/PrestaEvenements";
-import Retromail from "./pages/Retromail";
+import RetroMail from "./pages/Retromail";
 
 export default function App() {
   return (
@@ -32,7 +32,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/mobile/v/:parc" element={<MobileVehicle />} />
         <Route path="/presta-evenements" element={<PrestaEvenements />} />
-        <Route path="/retromail" element={<Retromail />} />
+        <Route path="/retromail" element={<RetroMail />} />
         <Route path="*" element={<DashboardHome />} />
       </Routes>
     </>  );}
