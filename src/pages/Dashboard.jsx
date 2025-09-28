@@ -10,7 +10,7 @@ import VehiculeShow from './VehiculeShow';
 import MyRBE from './MyRBE';
 import MyRBEActions from './MyRBEActions';
 import DashboardHome from './DashboardHome';
-import RetroMail from './RetroMail';
+import RetroMail from './Retromail';
 
 export default function Dashboard() {
   return (
