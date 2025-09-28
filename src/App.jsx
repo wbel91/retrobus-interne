@@ -32,7 +32,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/mobile/v/:parc" element={<MobileVehicle />} />
         <Route path="/presta-evenements" element={<PrestaEvenements />} />
-        <Route path="/retromail" element={<RetroMail />} />
+        <Route path="/retromail" element={<Retromail />} />
         <Route path="*" element={<DashboardHome />} />
       </Routes>
     </>  );}
