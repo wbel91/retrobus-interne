@@ -8,45 +8,73 @@ datasource db {
 }
 
 model Vehicle {
-  id              Int      @id @default(autoincrement())
-  parc            String   @unique
-  type            String
-  modele          String
-  immat           String?
-  etat            String
+  id                Int       @id @default(autoincrement())
+  parc              String    @unique
+  type              String
+  modele            String
+  marque            String?
+  subtitle          String?
+  immat             String?
+  etat              String
   miseEnCirculation DateTime?
-  energie         String?   // texte libre au lieu d’un enum
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  energie           String?
+  description       String?
+  history           String?
+  caracteristiques  String?
+  gallery           String?
+  backgroundImage   String?      // <- NEW
+  backgroundPosition String?     // <- NEW (ex: "50% 50%")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  usages  Usage[]  @relation("VehicleUsages")
+  reports Report[] @relation("VehicleReports")
 }
 
 model Usage {
-  id         Int      @id @default(autoincrement())
-  parc       String
-  startedAt  DateTime
-  endedAt    DateTime?
-  conducteur String?
-  participants String?    // JSON-encoded array of matricules
-  note       String?
-  relatedTo  Int?         // pour fallback (référence à un autre usage)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           Int       @id @default(autoincrement())
+  parc         String
+  startedAt    DateTime
+  endedAt      DateTime?
+  conducteur   String?
+  participants String?
+  note         String?
+  relatedTo    Int?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relation vers Vehicle via le champ parc
+  vehicle Vehicle @relation("VehicleUsages", fields: [parc], references: [parc])
+
+  // Relation inverse pour les reports (optionnelle)
+  reports Report[] @relation("UsageReports")
 }
 
 model Report {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   parc       String
-  usageId    Int?      // référence libre à Usage.id si besoin
+  usageId    Int?
   description String?
-  filesMeta  String?   // JSON metadata about files (filename/size/type), on stocke physiquement ailleurs
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  filesMeta  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Relation vers Vehicle
+  vehicle Vehicle @relation("VehicleReports", fields: [parc], references: [parc])
+
+  // Relation optionnelle vers Usage
+  usage Usage? @relation("UsageReports", fields: [usageId], references: [id])
+
+  @@index([parc])
+  @@index([usageId])
 }
 
+// Si tu gardes des flashes
 model Flash {
-  id         String   @id  // flash-{timestamp}-{random}
+  id         String   @id
   message    String
-  category   String   // INFO, NOTIF, POS
+  category   String
   active     Boolean  @default(true)
   expiresAt  DateTime?
   createdAt  DateTime @default(now())

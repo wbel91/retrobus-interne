@@ -1,28 +1,27 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copier manifest
 COPY package*.json ./
+COPY prisma ./prisma
 
-# Install dependencies
-RUN npm ci --only=production
+# Installer (avec dev deps pour générer Prisma)
+RUN npm ci
 
-# Copy source code
-COPY . .
-
-# Generate Prisma client
+# Générer Prisma client
 RUN npx prisma generate
 
-# Create uploads directory
-RUN mkdir -p uploads retromail/uploads
+# (Optionnel) appliquer migrations (si tu commits les migrations)
+# RUN npx prisma migrate deploy
 
-# Expose port
+# Copier le reste
+COPY . .
+
+# Optimiser: retirer dev deps (prisma) après génération
+RUN npm prune --production
+
+ENV NODE_ENV=production
 EXPOSE 4000
 
-# Set environment
-ENV NODE_ENV=production
-ENV DATABASE_URL=file:./prisma/dev.db
-
-# Start application
 CMD ["node", "src/server.js"]

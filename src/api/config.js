@@ -1,15 +1,22 @@
-// Configuration de base pour les API
+﻿// Configuration de base pour les API
 const API_BASE_URL = 'http://localhost:4000'; // API locale pour les tests
 
-// Instance Axios ou fetch personnalisée
+// Token d'autorisation pour l'API interne
+const AUTH_TOKEN = 'Bearer creator123';
+
+// Headers par dÃ©faut avec authentification
+const getDefaultHeaders = (options = {}) => ({
+  'Content-Type': 'application/json',
+  'Authorization': AUTH_TOKEN,
+  ...options.headers,
+});
+
+// Instance Axios ou fetch personnalisÃ©e
 export const apiClient = {
   get: async (url, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${url}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: getDefaultHeaders(options),
       ...options,
     });
     
@@ -23,10 +30,7 @@ export const apiClient = {
   post: async (url, data, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${url}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: getDefaultHeaders(options),
       body: JSON.stringify(data),
       ...options,
     });
@@ -41,10 +45,7 @@ export const apiClient = {
   put: async (url, data, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${url}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: getDefaultHeaders(options),
       body: JSON.stringify(data),
       ...options,
     });
@@ -59,10 +60,7 @@ export const apiClient = {
   delete: async (url, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${url}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: getDefaultHeaders(options),
       ...options,
     });
     
@@ -75,3 +73,6 @@ export const apiClient = {
 };
 
 export { API_BASE_URL };
+apiClient.baseURL = API_BASE_URL;
+apiClient.authHeader = 'Bearer creator123';
+

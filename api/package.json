@@ -1,29 +1,28 @@
 {
-  "name": "api",
+  "name": "rbe-intranet-api",
   "version": "1.0.0",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch ./src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
     "start": "node ./src/server.js",
-    "build": "npx prisma generate",
-    "postinstall": "npx prisma generate",
-    "vercel-build": "node build.js",
-    "seed": "node ./prisma/seed.js"
+    "start:fresh": "npm run prisma:generate && npm run prisma:push && node ./src/server.js"
   },
   "dependencies": {
-    "@chakra-ui/icons": "^2.2.4",
-    "@prisma/client": "5.18.0",
+    "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",
-    "csv-parse": "^6.1.0",
-    "dotenv": "^17.2.2",
-    "express": "^4.19.2",
+    "csv-parse": "^5.3.8",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "json2csv": "^6.0.0-alpha.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.6",
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.17.2",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "prisma": "5.18.0"
+    "prisma": "^5.22.0"
   }
 }
