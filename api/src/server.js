@@ -14,9 +14,9 @@ const PORT = process.env.PORT || 4000;
 app.use(express.json());
 app.use(cors({
   origin: [
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://localhost:3000', // ajouté
+    'http://localhost:5173', // Interne (Vite dev)
+    'http://localhost:4173', // Interne (Vite preview)
+    'http://localhost:3000', // Externe
     'https://www.association-rbe.fr',
     'https://retrobus-interne.fr'
   ]

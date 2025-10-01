@@ -1,17 +1,17 @@
 ﻿// Configuration de base pour les API
-const API_BASE_URL = 'http://localhost:4000'; // API locale pour les tests
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 // Token d'autorisation pour l'API interne
 const AUTH_TOKEN = 'Bearer creator123';
 
-// Headers par dÃ©faut avec authentification
+// Headers par défaut avec authentification
 const getDefaultHeaders = (options = {}) => ({
   'Content-Type': 'application/json',
   'Authorization': AUTH_TOKEN,
   ...options.headers,
 });
 
-// Instance Axios ou fetch personnalisÃ©e
+// Instance Axios ou fetch personnalisée
 export const apiClient = {
   get: async (url, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${url}`, {
