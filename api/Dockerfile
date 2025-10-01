@@ -21,8 +21,8 @@ COPY . .
 # Optimiser: retirer dev deps (prisma) après génération
 RUN npm prune --production
 
-# Fix OpenSSL pour Prisma sur Alpine Linux
-RUN apk add --no-cache openssl1.1-compat
+# Fix OpenSSL pour Prisma sur Alpine Linux (package mis à jour)
+RUN apk add --no-cache openssl
 
 ENV NODE_ENV=production
 EXPOSE 4000
