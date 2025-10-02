@@ -63,10 +63,29 @@ const stringifyJsonField = (field) => {
 // Transform vehicle data for API responses
 const transformVehicle = (vehicle) => {
   if (!vehicle) return null;
+  let caract = {};
+  if (vehicle.caracteristiques) {
+    try { caract = JSON.parse(vehicle.caracteristiques); } catch {}
+  }
   return {
-    ...vehicle,
-    caracteristiques: parseJsonField(vehicle.caracteristiques),
-    gallery: parseJsonField(vehicle.gallery)
+    id: vehicle.id,
+    parc: vehicle.parc,
+    type: vehicle.type,
+    modele: vehicle.modele,
+    marque: vehicle.marque,
+    subtitle: vehicle.subtitle,
+    immat: vehicle.immat,
+    etat: vehicle.etat,
+    miseEnCirculation: vehicle.miseEnCirculation,
+    energie: vehicle.energie,
+    description: vehicle.description,
+    histoire: vehicle.history, // Alias pour le front
+    backgroundImage: vehicle.backgroundImage,
+    backgroundPosition: vehicle.backgroundPosition,
+    gallery: parseJsonField(vehicle.gallery),
+    caracteristiques: caract, // pour debug ou réutilisation
+    // Déballer les champs utiles directement
+    ...caract
   };
 };
 
@@ -164,41 +183,75 @@ app.put('/vehicles/:parc', requireCreator, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
-    const body = req.body;
+    const body = { ...req.body };
 
-    // Extraire les champs destinés à caracteristiques
-    const caracteristiquesKeys = [
-      'anneeConstruction','constructeurCarrosserie','numeroFlotte','ancienNumero',
-      'longueur','largeur','hauteur','nombrePlaces','placesAssises',
-      'motorisation','puissance','normeEuro','boiteVitesses','equipementsSpeciaux'
-    ];
-
-    const caracteristiquesObj = {};
-    caracteristiquesKeys.forEach(k => {
-      if (body[k] !== undefined && body[k] !== null && body[k] !== '') {
-        caracteristiquesObj[k] = body[k];
-        delete body[k]; // on retire du body principal
-      }
-    });
-
-    // Charger l’existant pour merger proprement
     const existing = await prisma.vehicle.findUnique({ where: { parc } });
     if (!existing) return res.status(404).json({ error: 'Véhicule introuvable' });
 
-    let mergedCaracteristiques = {};
+    // Caractéristiques existantes
+    let caract = {};
     if (existing.caracteristiques) {
-      try { mergedCaracteristiques = JSON.parse(existing.caracteristiques); } catch {}
+      try { caract = JSON.parse(existing.caracteristiques); } catch {}
     }
-    mergedCaracteristiques = { ...mergedCaracteristiques, ...caracteristiquesObj };
+
+    const caractKeys = [
+      'fleetNumbers','constructeur','miseEnCirculationTexte',
+      'longueur','placesAssises','placesDebout','ufr',
+      'preservePar','normeEuro','moteur','boiteVitesses',
+      'nombrePortes','livree','girouette','climatisation'
+    ];
+
+    const directMap = {
+      modele: 'modele',
+      marque: 'marque',
+      subtitle: 'subtitle',
+      immat: 'immat',
+      etat: 'etat',
+      type: 'type',
+      energie: 'energie',
+      description: 'description',
+      histoire: 'history'
+    };
+
+    const dataUpdate = {};
+
+    Object.entries(directMap).forEach(([frontKey, dbKey]) => {
+      if (body[frontKey] !== undefined) {
+        dataUpdate[dbKey] = body[frontKey] === '' ? null : body[frontKey];
+        delete body[frontKey];
+      }
+    });
+
+    if (body.miseEnCirculation !== undefined) {
+      dataUpdate.miseEnCirculation = body.miseEnCirculation
+        ? new Date(body.miseEnCirculation)
+        : null;
+      delete body.miseEnCirculation;
+    }
+
+    caractKeys.forEach(k => {
+      if (body[k] !== undefined) {
+        if (body[k] === '' || body[k] === null) {
+          delete caract[k];
+        } else {
+          caract[k] = body[k];
+        }
+        delete body[k];
+      }
+    });
+
+    if (body.backgroundPosition !== undefined) {
+      dataUpdate.backgroundPosition = body.backgroundPosition;
+      delete body.backgroundPosition;
+    }
+
+    dataUpdate.caracteristiques = Object.keys(caract).length
+      ? JSON.stringify(caract)
+      : null;
 
     const updated = await prisma.vehicle.update({
       where: { parc },
-      data: {
-        ...body,
-        caracteristiques: Object.keys(mergedCaracteristiques).length
-          ? JSON.stringify(mergedCaracteristiques)
-          : null
-      }
+      data: dataUpdate
     });
 
     res.json(transformVehicle(updated));

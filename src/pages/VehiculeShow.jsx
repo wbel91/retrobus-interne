@@ -10,6 +10,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { FiArrowLeft, FiExternalLink, FiSave, FiUpload, FiTarget, FiChevronDown, FiChevronUp, FiTrash2 } from 'react-icons/fi';
 import { apiClient } from '../api/config';
 import GalleryManager from '../components/vehicle/GalleryManager.jsx';
+import CaracteristiquesEditor from '../components/vehicle/CaracteristiquesEditor.jsx';
 
 const PUBLIC_BASE = import.meta.env.VITE_PUBLIC_BASE || window.location.origin;
 
@@ -32,7 +33,7 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
   const fileInputRef = useRef();
   const [uploading, setUploading] = useState(false);
   const [clickPosition, setClickPosition] = useState(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false); // Repliée par défaut
   const toast = useToast();
 
   const uploadBackground = async (file) => {
@@ -50,105 +51,168 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
       });
 
       if (!response.ok) throw new Error('Upload failed');
-      const result = await response.json();
       
+      const result = await response.json();
+      onChange({ backgroundImage: result.backgroundImage });
       toast({ status: 'success', title: 'Image de fond mise à jour' });
-      onChange && onChange();
     } catch (error) {
-      console.error('Upload error:', error);
-      toast({ status: 'error', title: 'Erreur upload', description: error.message });
+      toast({ status: 'error', title: 'Erreur upload image de fond' });
     } finally {
       setUploading(false);
     }
   };
 
-  const handleFileSelect = (event) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      uploadBackground(file);
+  const deleteBackground = async () => {
+    try {
+      await apiClient.put(`/vehicles/${parc}`, {
+        backgroundImage: null,
+        backgroundPosition: null
+      });
+      
+      onChange({ backgroundImage: null, backgroundPosition: null });
+      toast({ status: 'success', title: 'Image de fond supprimée' });
+    } catch (error) {
+      toast({ status: 'error', title: 'Erreur suppression image de fond' });
     }
   };
 
-  const handleImageClick = (event) => {
+  const handleImageClick = async (event) => {
     const rect = event.target.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    const x = ((event.clientX - rect.left) / rect.width * 100);
+    const y = ((event.clientY - rect.top) / rect.height * 100);
+    const position = `${x.toFixed(1)}% ${y.toFixed(1)}%`;
     
     setClickPosition({ x, y });
-    
-    // Sauvegarder automatiquement la position
-    setTimeout(() => {
-      onChange && onChange();
-      toast({ status: 'info', title: 'Position focale mise à jour' });
-    }, 100);
+
+    try {
+      await apiClient.put(`/vehicles/${parc}`, {
+        backgroundPosition: position
+      });
+      
+      onChange({ backgroundPosition: position });
+      toast({ 
+        status: 'success', 
+        title: 'Position focale sauvegardée',
+        description: position 
+      });
+    } catch (error) {
+      toast({ status: 'error', title: 'Erreur sauvegarde position' });
+    }
   };
 
-  const backgroundImage = vehicle?.backgroundImage ? 
-    `${apiClient.baseURL}${vehicle.backgroundImage}` : null;
-  const backgroundPosition = vehicle?.backgroundPosition || 'center center';
+  const backgroundImage = vehicle.backgroundImage || (vehicle.gallery?.[0]);
+  const backgroundPosition = vehicle.backgroundPosition || 'center';
 
   return (
-    <VStack align="stretch" spacing={3}>
-      <HStack justify="space-between">
-        <Text fontWeight="bold">Image de fond</Text>
-        <Button size="sm" leftIcon={<FiChevronDown />} onClick={() => setIsExpanded(!isExpanded)}>
-          {isExpanded ? 'Réduire' : 'Configurer'}
-        </Button>
+    <VStack spacing={4} align="stretch">
+      {/* En-tête avec bouton de repli */}
+      <HStack justify="space-between" cursor="pointer" onClick={() => setIsExpanded(!isExpanded)}>
+        <Heading size="md">🖼️ Image de fond Hero</Heading>
+        <HStack spacing={2}>
+          {backgroundImage && isExpanded && (
+            <Button
+              leftIcon={<FiTrash2 />}
+              size="sm"
+              colorScheme="red"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteBackground();
+              }}
+            >
+              Supprimer
+            </Button>
+          )}
+          <IconButton
+            icon={isExpanded ? <FiChevronUp /> : <FiChevronDown />}
+            size="sm"
+            variant="ghost"
+            aria-label={isExpanded ? "Replier" : "Déplier"}
+          />
+        </HStack>
       </HStack>
 
-      <Collapse in={isExpanded}>
-        <VStack spacing={4} p={4} bg="gray.50" borderRadius="md">
-          <HStack spacing={3}>
-            <Button
-              leftIcon={<FiUpload />}
-              onClick={() => fileInputRef.current?.click()}
-              isLoading={uploading}
-              size="sm"
-            >
-              Changer l'image
-            </Button>
-            
-            {backgroundImage && (
+      {/* Contenu repliable */}
+      <Collapse in={isExpanded} animateOpacity>
+        <VStack spacing={4} align="stretch">
+          <HStack justify="space-between">
+            <Text fontSize="sm" color="gray.600">
+              Gestion de l'image de fond plein écran pour la page publique
+            </Text>
+            <HStack>
               <Button
-                leftIcon={<FiTarget />}
-                onClick={onOpen}
+                leftIcon={<FiUpload />}
                 size="sm"
-                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                isLoading={uploading}
+                colorScheme="blue"
               >
-                Régler position
+                Changer le fond
               </Button>
-            )}
+              {backgroundImage && (
+                <Button
+                  leftIcon={<FiTarget />}
+                  size="sm"
+                  colorScheme="orange"
+                  onClick={onOpen}
+                >
+                  Position focale
+                </Button>
+              )}
+            </HStack>
           </HStack>
 
-          <input
+          <Input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
+            onChange={(e) => uploadBackground(e.target.files[0])}
+            display="none"
           />
 
           {backgroundImage && (
-            <Image
-              src={backgroundImage}
-              alt="Aperçu fond"
-              maxH="200px"
-              borderRadius="md"
-              objectFit="cover"
-            />
+            <Box borderRadius="md" overflow="hidden" bg="gray.100" border="1px solid" borderColor="gray.200">
+              <Image
+                src={backgroundImage}
+                alt="Aperçu image de fond"
+                w="100%"
+                h="200px"
+                objectFit="cover"
+                objectPosition={backgroundPosition}
+              />
+              <Text fontSize="sm" color="gray.600" p={2} bg="gray.50">
+                📍 Position focale : {backgroundPosition}
+              </Text>
+            </Box>
+          )}
+
+          {!backgroundImage && (
+            <Box 
+              borderRadius="md" 
+              border="2px dashed" 
+              borderColor="gray.300" 
+              p={8} 
+              textAlign="center"
+              bg="gray.50"
+            >
+              <Text color="gray.500" mb={2}>Aucune image de fond définie</Text>
+              <Text fontSize="sm" color="gray.400">
+                La première image de la galerie sera utilisée par défaut
+              </Text>
+            </Box>
           )}
         </VStack>
       </Collapse>
 
-      {/* Modal pour régler la position */}
-      <Modal isOpen={isOpen} onClose={onClose} size="xl">
+      {/* Modal pour ajuster la position */}
+      <Modal isOpen={isOpen} onClose={onClose} size="4xl">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Régler le point focal</ModalHeader>
+          <ModalHeader>🎯 Ajuster la position focale</ModalHeader>
           <ModalCloseButton />
-          <ModalBody pb={6}>
+          <ModalBody>
             <VStack spacing={4}>
-              <Text fontSize="sm" color="gray.600">
+              <Text color="gray.600">
                 Cliquez sur l'image pour définir le point focal qui sera visible sur la page publique
               </Text>
               
@@ -202,25 +266,84 @@ export default function VehiculeShow() {
   const [saving, setSaving] = useState(false);
   const [vehicle, setVehicle] = useState(null);
   const [basicInfo, setBasicInfo] = useState({});
-  const [usages, setUsages] = useState([]);
-  const [reports, setReports] = useState([]);
-  const [newUsage, setNewUsage] = useState({});
-  const [newReport, setNewReport] = useState({});
+
+  // DONNÉES COMPLÈTES PRÉ-REMPLIES basées sur les informations fournies
+  const defaultVehicleData = {
+    // Informations de base
+    marque: "Mercedes-Benz",
+    modele: "Citaro ♿",
+    subtitle: "Citaro 1 | € II | ❄️ | ♿",
+    etat: "Préservé",
+    type: "Bus",
+    immat: "FG-920-RE",
+    energie: "Diesel",
+    miseEnCirculation: "2001-07-01",
+    
+    // Informations techniques détaillées
+    numerosFlotte: "592 / 720 / X / 920",
+    constructeur: "Mercedes-Benz",
+    longueur: "11,95 m",
+    placesAssises: "32",
+    placesDebout: "64",
+    ufr: "1",
+    statut: "Préservé",
+    preservePar: "Association RétroBus Essonne",
+    normeEuro: "Euro II",
+    moteur: "Mercedes-Benz OM906hLA - 279 ch",
+    boiteVitesses: "Automatique ZF5HP-502C",
+    nombrePortes: "2",
+    livree: "Grise",
+    girouette: "Duhamel LED Oranges + Pastilles Vertes",
+    climatisation: "Complète",
+    
+    description: `Ce véhicule est un exemple emblématique de la gamme Citaro de première génération. Mis en service commercial en juillet 2001, il représente l'évolution technologique des transports urbains du début des années 2000. Équipé d'une climatisation complète et accessible aux personnes à mobilité réduite.`,
+    history: `Le Mercedes-Benz Citaro est un autobus urbain produit par Daimler AG depuis 1997. Ce modèle a révolutionné les transports publics européens avec son design moderne et ses innovations techniques. Notre exemplaire FG-920-RE a été commandé par Cars Bridet à Wissous pour le réseau du Palladin et mis en service en juillet 2001. Au cours de sa carrière, il a porté successivement les numéros 592, 720, X, puis 920. Il a assuré la desserte Le Palladin jusqu'en août 2014. Après plusieurs années de service fidèle, il est passé brièvement par Brétigny en 2018, puis a rejoint Transdev STRAV à Limeil-Brévannes, avant d'être exploité par Cars Sœur. En mai 2025, ce véhicule historique a trouvé sa place au sein de la collection de l'association RétroBus Essonne, où il témoigne de l'évolution du transport public francilien au début du XXIe siècle.`,
+    
+    caracteristiques: [
+      { label: "Numéros de flotte", value: "592 / 720 / X / 920" },
+      { label: "Constructeur", value: "Mercedes-Benz" },
+      { label: "Modèle", value: "Citaro ♿" },
+      { label: "Immatriculation", value: "FG-920-RE" },
+      { label: "Mise en circulation", value: "juillet 2001" },
+      { label: "Longueur", value: "11,95 m" },
+      { label: "Places assises", value: "32" },
+      { label: "Places debout", value: "64" },
+      { label: "UFR", value: "1" },
+      { label: "Statut", value: "Préservé" },
+      { label: "Préservé par", value: "Association RétroBus Essonne" },
+      { label: "Énergie", value: "Diesel" },
+      { label: "Norme Euro", value: "Euro II" },
+      { label: "Moteur", value: "Mercedes-Benz OM906hLA - 279 ch" },
+      { label: "Boîte de vitesses", value: "Automatique ZF5HP-502C" },
+      { label: "Nombre de portes", value: "2" },
+      { label: "Livrée", value: "Grise" },
+      { label: "Girouette", value: "Duhamel LED Oranges + Pastilles Vertes" },
+      { label: "Climatisation", value: "Complète" }
+    ]
+  };
 
   const loadAll = useCallback(async () => {
     if (!parc) return;
     setLoading(true);
     try {
-      const vReq = apiClient.get(`/vehicles/${parc}`);
-      const uReq = apiClient.get(`/vehicles/${parc}/usages`);
-      const rReq = apiClient.get(`/vehicles/${parc}/reports`);
-      const [v, u, r] = await Promise.allSettled([vReq, uReq, rReq]);
-      if (v.status === 'fulfilled') {
-        setVehicle(v.value);
-        setBasicInfo(v.value);
-      } else throw new Error('Véhicule introuvable');
-      if (u.status === 'fulfilled') setUsages(u.value);
-      if (r.status === 'fulfilled') setReports(r.value);
+      const response = await apiClient.get(`/vehicles/${parc}`);
+      setVehicle(response);
+      
+      // Fusionner avec les données par défaut si manquantes
+      const mergedData = {
+        ...defaultVehicleData,
+        ...response,
+        // Si pas de caractéristiques ou vides, utiliser les valeurs par défaut
+        caracteristiques: (response.caracteristiques && response.caracteristiques.length > 0) 
+          ? response.caracteristiques 
+          : defaultVehicleData.caracteristiques,
+        // Si pas de description, utiliser la par défaut
+        description: response.description || defaultVehicleData.description,
+        // Si pas d'histoire, utiliser la par défaut
+        history: response.history || defaultVehicleData.history,
+      };
+      
+      setBasicInfo(mergedData);
     } catch (e) {
       toast({ status: 'error', title: e.message || 'Erreur chargement' });
       navigate('/dashboard/vehicules');
@@ -233,445 +356,443 @@ export default function VehiculeShow() {
     loadAll();
   }, [loadAll]);
 
+  // Fonction pour mettre à jour automatiquement les caractéristiques
+  const updateCaracteristiques = useCallback(() => {
+    const updatedCaracteristiques = [
+      { label: "Numéros de flotte", value: basicInfo.numerosFlotte || '' },
+      { label: "Constructeur", value: basicInfo.constructeur || '' },
+      { label: "Modèle", value: basicInfo.modele || '' },
+      { label: "Immatriculation", value: basicInfo.immat || '' },
+      { label: "Mise en circulation", value: basicInfo.miseEnCirculation ? 'juillet 2001' : '' },
+      { label: "Longueur", value: basicInfo.longueur || '' },
+      { label: "Places assises", value: basicInfo.placesAssises || '' },
+      { label: "Places debout", value: basicInfo.placesDebout || '' },
+      { label: "UFR", value: basicInfo.ufr || '' },
+      { label: "Statut", value: basicInfo.statut || '' },
+      { label: "Préservé par", value: basicInfo.preservePar || '' },
+      { label: "Énergie", value: basicInfo.energie || '' },
+      { label: "Norme Euro", value: basicInfo.normeEuro || '' },
+      { label: "Moteur", value: basicInfo.moteur || '' },
+      { label: "Boîte de vitesses", value: basicInfo.boiteVitesses || '' },
+      { label: "Nombre de portes", value: basicInfo.nombrePortes || '' },
+      { label: "Livrée", value: basicInfo.livree || '' },
+      { label: "Girouette", value: basicInfo.girouette || '' },
+      { label: "Climatisation", value: basicInfo.climatisation || '' }
+    ].filter(item => item.value); // Filtrer les valeurs vides
+
+    setBasicInfo(prev => ({ ...prev, caracteristiques: updatedCaracteristiques }));
+  }, [basicInfo.numerosFlotte, basicInfo.constructeur, basicInfo.modele, basicInfo.immat, basicInfo.miseEnCirculation, basicInfo.longueur, basicInfo.placesAssises, basicInfo.placesDebout, basicInfo.ufr, basicInfo.statut, basicInfo.preservePar, basicInfo.energie, basicInfo.normeEuro, basicInfo.moteur, basicInfo.boiteVitesses, basicInfo.nombrePortes, basicInfo.livree, basicInfo.girouette, basicInfo.climatisation]);
+
+  // Mettre à jour les caractéristiques quand les champs changent
+  useEffect(() => {
+    updateCaracteristiques();
+  }, [updateCaracteristiques]);
+
   const save = async () => {
     try {
       setSaving(true);
-      await apiClient.put(`/vehicles/${parc}`, basicInfo);
-      setVehicle({ ...vehicle, ...basicInfo });
-      toast({ status: 'success', title: 'Véhicule mis à jour' });
-    } catch (error) {
-      toast({ status: 'error', title: 'Erreur sauvegarde' });
+      await apiClient.put(`/vehicles/${parc}`, {
+        etat: basicInfo.etat,
+        marque: basicInfo.marque,
+        modele: basicInfo.modele,
+        type: basicInfo.type,
+        immat: basicInfo.immat,
+        energie: basicInfo.energie,
+        miseEnCirculation: basicInfo.miseEnCirculation,
+        subtitle: basicInfo.subtitle,
+        description: basicInfo.description,
+        history: basicInfo.history,
+        caracteristiques: basicInfo.caracteristiques,
+        gallery: basicInfo.gallery,
+        backgroundImage: basicInfo.backgroundImage,
+        backgroundPosition: basicInfo.backgroundPosition,
+        // Ajouter tous les nouveaux champs
+        numerosFlotte: basicInfo.numerosFlotte,
+        constructeur: basicInfo.constructeur,
+        longueur: basicInfo.longueur,
+        placesAssises: basicInfo.placesAssises,
+        placesDebout: basicInfo.placesDebout,
+        ufr: basicInfo.ufr,
+        statut: basicInfo.statut,
+        preservePar: basicInfo.preservePar,
+        normeEuro: basicInfo.normeEuro,
+        moteur: basicInfo.moteur,
+        boiteVitesses: basicInfo.boiteVitesses,
+        nombrePortes: basicInfo.nombrePortes,
+        livree: basicInfo.livree,
+        girouette: basicInfo.girouette,
+        climatisation: basicInfo.climatisation
+      });
+      toast({ status: 'success', title: '✅ Sauvegardé avec succès', description: 'Visible sur la page publique' });
+      loadAll(); // Recharger pour synchroniser
+    } catch {
+      toast({ status: 'error', title: '❌ Erreur sauvegarde' });
     } finally {
       setSaving(false);
     }
   };
 
-  const addUsage = async () => {
-    if (!newUsage.date || !newUsage.kilometres) return;
-    try {
-      await apiClient.post(`/vehicles/${parc}/usages`, newUsage);
-      toast({ status: 'success', title: 'Usage ajouté' });
-      setNewUsage({});
-      loadAll();
-    } catch (error) {
-      toast({ status: 'error', title: 'Erreur ajout usage' });
-    }
+  const updateVehicleInfo = (updates) => {
+    setVehicle(prev => ({ ...prev, ...updates }));
+    setBasicInfo(prev => ({ ...prev, ...updates }));
   };
 
-  const addReport = async () => {
-    if (!newReport.title || !newReport.description) return;
-    try {
-      await apiClient.post(`/vehicles/${parc}/reports`, newReport);
-      toast({ status: 'success', title: 'Rapport ajouté' });
-      setNewReport({});
-      loadAll();
-    } catch (error) {
-      toast({ status: 'error', title: 'Erreur ajout rapport' });
-    }
+  const resetToDefaults = () => {
+    setBasicInfo(prev => ({
+      ...prev,
+      ...defaultVehicleData,
+      // Garder les IDs et données système
+      parc: prev.parc,
+      id: prev.id,
+      createdAt: prev.createdAt,
+      updatedAt: prev.updatedAt,
+      gallery: prev.gallery,
+      backgroundImage: prev.backgroundImage,
+      backgroundPosition: prev.backgroundPosition
+    }));
+    toast({ status: 'info', title: '🔄 Données par défaut restaurées', description: 'N\'oubliez pas de sauvegarder' });
   };
 
-  if (loading) {
-    return (
-      <Center h="400px">
-        <Spinner size="xl" />
-      </Center>
-    );
-  }
+  if (loading) return <Center h="60vh"><Spinner size="xl" /></Center>;
+  if (!vehicle) return null;
 
-  if (!vehicle) {
-    return (
-      <Center h="400px">
-        <Text>Véhicule non trouvé</Text>
-      </Center>
-    );
-  }
+  const fullTitle = vehicle.marque ? `${vehicle.marque} ${vehicle.modele}` : vehicle.modele;
 
   return (
-    <Box p={6} maxW="1200px" mx="auto">
-      {/* Header */}
+    <Box p={8}>
       <Flex align="center" justify="space-between" mb={6}>
         <HStack>
-          <IconButton
-            icon={<FiArrowLeft />}
-            onClick={() => navigate('/dashboard/vehicules')}
+          <Button
+            leftIcon={<FiArrowLeft />}
             variant="ghost"
-          />
-          <VStack align="start" spacing={0}>
-            <Heading size="lg">Parc {vehicle.parc}</Heading>
-            <Text color="gray.600">{vehicle.type} • {vehicle.modele}</Text>
-          </VStack>
-        </HStack>
-        
-        <HStack>
+            onClick={() => navigate('/dashboard/vehicules')}
+          >
+            Retour
+          </Button>
+          <Heading size="lg">✏️ Édition véhicule {vehicle.parc}</Heading>
           <EtatBadge etat={vehicle.etat} />
+        </HStack>
+        <HStack>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={resetToDefaults}
+          >
+            🔄 Données par défaut
+          </Button>
           <Button
             leftIcon={<FiExternalLink />}
-            size="sm"
+            colorScheme="blue"
             variant="outline"
             onClick={() => window.open(`${PUBLIC_BASE}/vehicles/${parc}`, '_blank')}
           >
-            Voir public
-          </Button>
-          <Button
-            leftIcon={<FiSave />}
-            colorScheme="blue"
-            onClick={save}
-            isLoading={saving}
-          >
-            Sauvegarder
+            👁️ Voir la page publique
           </Button>
         </HStack>
       </Flex>
 
-      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8}>
-        {/* SECTION CONSOLIDÉE - Toutes les informations */}
-        <VStack align="stretch" spacing={6}>
-          <Box bg="white" p={6} borderRadius="lg" shadow="sm" border="1px" borderColor="gray.200">
-            <Heading size="md" mb={4}>📋 Informations complètes</Heading>
+      <VStack spacing={8} align="stretch">
+        {/* Section Image de fond - Repliable */}
+        <Box bg="blue.50" p={6} borderRadius="lg" border="1px solid" borderColor="blue.200">
+          <BackgroundImageManager
+            vehicle={vehicle}
+            parc={parc}
+            onChange={updateVehicleInfo}
+            authHeader={apiClient.authHeader}
+          />
+        </Box>
+
+        {/* Section Informations principales - TOUS LES CHAMPS SPÉCIFIQUES */}
+        <Box bg="gray.50" p={6} borderRadius="lg" border="1px solid" borderColor="gray.200">
+          <Heading size="md" mb={4}>📝 Informations principales</Heading>
+          
+          {/* Première ligne - Infos de base */}
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Parc</FormLabel>
+              <Input value={vehicle.parc} isReadOnly bg="gray.100" />
+            </FormControl>
             
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-              {/* Informations de base */}
-              <FormControl>
-                <FormLabel>Marque</FormLabel>
-                <Input
-                  value={basicInfo.marque || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, marque: e.target.value})}
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Modèle</FormLabel>
-                <Input
-                  value={basicInfo.modele || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, modele: e.target.value})}
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Sous-titre</FormLabel>
-                <Input
-                  value={basicInfo.subtitle || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, subtitle: e.target.value})}
-                  placeholder="Ex: Citaro 1 | € II | ❄️ | ♿"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Type</FormLabel>
-                <Select
-                  value={basicInfo.type || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, type: e.target.value})}
-                >
-                  <option value="">Sélectionner</option>
-                  <option value="Bus">Bus</option>
-                  <option value="Car">Car</option>
-                  <option value="Tramway">Tramway</option>
-                  <option value="Métro">Métro</option>
-                </Select>
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Immatriculation</FormLabel>
-                <Input
-                  value={basicInfo.immat || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, immat: e.target.value})}
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>État</FormLabel>
-                <Select
-                  value={basicInfo.etat || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, etat: e.target.value})}
-                >
-                  <option value="">Sélectionner</option>
-                  <option value="Service">En service</option>
-                  <option value="Préservé">Préservé</option>
-                  <option value="Restauration">En restauration</option>
-                  <option value="A VENIR">À venir</option>
-                  <option value="disponible">Disponible</option>
-                  <option value="en_panne">En panne</option>
-                  <option value="maintenance">Maintenance</option>
-                </Select>
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Énergie</FormLabel>
-                <Select
-                  value={basicInfo.energie || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, energie: e.target.value})}
-                >
-                  <option value="">Sélectionner</option>
-                  <option value="Diesel">Diesel</option>
-                  <option value="Essence">Essence</option>
-                  <option value="Électrique">Électrique</option>
-                  <option value="Hybride">Hybride</option>
-                  <option value="GNV">GNV</option>
-                </Select>
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Mise en circulation</FormLabel>
-                <Input
-                  type="date"
-                  value={basicInfo.miseEnCirculation ? basicInfo.miseEnCirculation.split('T')[0] : ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, miseEnCirculation: e.target.value})}
-                />
-              </FormControl>
-
-              {/* NOUVEAUX CHAMPS - Caractéristiques spécifiques */}
-              <FormControl>
-                <FormLabel>Année de construction</FormLabel>
-                <Input
-                  value={basicInfo.anneeConstruction || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, anneeConstruction: e.target.value})}
-                  placeholder="Ex: 2001"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Constructeur carrosserie</FormLabel>
-                <Input
-                  value={basicInfo.constructeurCarrosserie || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, constructeurCarrosserie: e.target.value})}
-                  placeholder="Ex: EvoBus"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Numéro de flotte</FormLabel>
-                <Input
-                  value={basicInfo.numeroFlotte || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, numeroFlotte: e.target.value})}
-                  placeholder="Ex: 920"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Ancien numéro</FormLabel>
-                <Input
-                  value={basicInfo.ancienNumero || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, ancienNumero: e.target.value})}
-                  placeholder="Ex: 3920"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Longueur</FormLabel>
-                <Input
-                  value={basicInfo.longueur || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, longueur: e.target.value})}
-                  placeholder="Ex: 12m"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Largeur</FormLabel>
-                <Input
-                  value={basicInfo.largeur || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, largeur: e.target.value})}
-                  placeholder="Ex: 2,55m"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Hauteur</FormLabel>
-                <Input
-                  value={basicInfo.hauteur || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, hauteur: e.target.value})}
-                  placeholder="Ex: 3,07m"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Nombre de places</FormLabel>
-                <Input
-                  value={basicInfo.nombrePlaces || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, nombrePlaces: e.target.value})}
-                  placeholder="Ex: 109"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Places assises</FormLabel>
-                <Input
-                  value={basicInfo.placesAssises || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, placesAssises: e.target.value})}
-                  placeholder="Ex: 43"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Motorisation</FormLabel>
-                <Input
-                  value={basicInfo.motorisation || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, motorisation: e.target.value})}
-                  placeholder="Ex: Mercedes OM906hLA"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Puissance</FormLabel>
-                <Input
-                  value={basicInfo.puissance || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, puissance: e.target.value})}
-                  placeholder="Ex: 260 Ch"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Norme Euro</FormLabel>
-                <Input
-                  value={basicInfo.normeEuro || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, normeEuro: e.target.value})}
-                  placeholder="Ex: Euro II"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Boîte de vitesses</FormLabel>
-                <Input
-                  value={basicInfo.boiteVitesses || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, boiteVitesses: e.target.value})}
-                  placeholder="Ex: ZF EcoLife"
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Équipements spéciaux</FormLabel>
-                <Input
-                  value={basicInfo.equipementsSpeciaux || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, equipementsSpeciaux: e.target.value})}
-                  placeholder="Ex: Climatisation, Accessibilité PMR"
-                />
-              </FormControl>
-            </SimpleGrid>
-
-            <Divider my={6} />
+            <FormControl>
+              <FormLabel>Numéros de flotte</FormLabel>
+              <Input
+                value={basicInfo.numerosFlotte || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, numerosFlotte: e.target.value }))}
+                placeholder="592 / 720 / X / 920"
+              />
+            </FormControl>
             
-            {/* Description et Histoire */}
-            <SimpleGrid columns={1} spacing={4}>
-              <FormControl>
-                <FormLabel>Description</FormLabel>
-                <Textarea
-                  value={basicInfo.description || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, description: e.target.value})}
-                  placeholder="Description du véhicule..."
-                  rows={4}
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Histoire</FormLabel>
-                <Textarea
-                  value={basicInfo.histoire || ''}
-                  onChange={(e) => setBasicInfo({...basicInfo, histoire: e.target.value})}
-                  placeholder="Histoire et informations historiques du véhicule..."
-                  rows={6}
-                />
-              </FormControl>
-            </SimpleGrid>
-          </Box>
+            <FormControl>
+              <FormLabel>Constructeur</FormLabel>
+              <Input
+                value={basicInfo.constructeur || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, constructeur: e.target.value }))}
+                placeholder="Mercedes-Benz"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Modèle</FormLabel>
+              <Input
+                value={basicInfo.modele || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, modele: e.target.value }))}
+                placeholder="Citaro ♿"
+              />
+            </FormControl>
+          </SimpleGrid>
 
-          {/* Configuration image de fond */}
-          <Box bg="white" p={6} borderRadius="lg" shadow="sm" border="1px" borderColor="gray.200">
-            <BackgroundImageManager 
-              vehicle={vehicle}
-              parc={parc}
-              onChange={loadAll}
-              authHeader={`Bearer ${localStorage.getItem('token')}`}
+          {/* Deuxième ligne - Immatriculation et circulation */}
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Immatriculation</FormLabel>
+              <Input
+                value={basicInfo.immat || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, immat: e.target.value }))}
+                placeholder="FG-920-RE"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Mise en circulation</FormLabel>
+              <Input
+                type="date"
+                value={basicInfo.miseEnCirculation ? new Date(basicInfo.miseEnCirculation).toISOString().split('T')[0] : ''}
+                onChange={e => setBasicInfo(b => ({ ...b, miseEnCirculation: e.target.value }))}
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Longueur</FormLabel>
+              <Input
+                value={basicInfo.longueur || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, longueur: e.target.value }))}
+                placeholder="11,95 m"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Places assises</FormLabel>
+              <Input
+                value={basicInfo.placesAssises || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, placesAssises: e.target.value }))}
+                placeholder="32"
+              />
+            </FormControl>
+          </SimpleGrid>
+
+          {/* Troisième ligne - Capacités */}
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Places debout</FormLabel>
+              <Input
+                value={basicInfo.placesDebout || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, placesDebout: e.target.value }))}
+                placeholder="64"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>UFR</FormLabel>
+              <Input
+                value={basicInfo.ufr || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, ufr: e.target.value }))}
+                placeholder="1"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Statut</FormLabel>
+              <Select
+                value={basicInfo.statut || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, statut: e.target.value }))}
+              >
+                <option value="Préservé">Préservé</option>
+                <option value="Service">Service</option>
+                <option value="disponible">Disponible</option>
+                <option value="en_panne">En panne</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="A VENIR">A venir</option>
+                <option value="Restauration">Restauration</option>
+              </Select>
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Énergie</FormLabel>
+              <Select
+                value={basicInfo.energie || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, energie: e.target.value }))}
+              >
+                <option value="Diesel">Diesel</option>
+                <option value="Électrique">Électrique</option>
+                <option value="Hybride">Hybride</option>
+                <option value="GNV">GNV</option>
+              </Select>
+            </FormControl>
+          </SimpleGrid>
+
+          {/* Quatrième ligne - Préservation */}
+          <SimpleGrid columns={{ base: 1, md: 1 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Préservé par</FormLabel>
+              <Input
+                value={basicInfo.preservePar || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, preservePar: e.target.value }))}
+                placeholder="Association RétroBus Essonne"
+              />
+            </FormControl>
+          </SimpleGrid>
+
+          {/* Cinquième ligne - Moteur et technique */}
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Norme Euro</FormLabel>
+              <Input
+                value={basicInfo.normeEuro || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, normeEuro: e.target.value }))}
+                placeholder="Euro II"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Moteur</FormLabel>
+              <Input
+                value={basicInfo.moteur || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, moteur: e.target.value }))}
+                placeholder="Mercedes-Benz OM906hLA - 279 ch"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Boîte de vitesses</FormLabel>
+              <Input
+                value={basicInfo.boiteVitesses || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, boiteVitesses: e.target.value }))}
+                placeholder="Automatique ZF5HP-502C"
+              />
+            </FormControl>
+          </SimpleGrid>
+
+          {/* Sixième ligne - Caractéristiques finales */}
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4} mb={4}>
+            <FormControl>
+              <FormLabel>Nombre de portes</FormLabel>
+              <Input
+                value={basicInfo.nombrePortes || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, nombrePortes: e.target.value }))}
+                placeholder="2"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Livrée</FormLabel>
+              <Input
+                value={basicInfo.livree || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, livree: e.target.value }))}
+                placeholder="Grise"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Girouette</FormLabel>
+              <Input
+                value={basicInfo.girouette || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, girouette: e.target.value }))}
+                placeholder="Duhamel LED Oranges + Pastilles Vertes"
+              />
+            </FormControl>
+            
+            <FormControl>
+              <FormLabel>Climatisation</FormLabel>
+              <Input
+                value={basicInfo.climatisation || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, climatisation: e.target.value }))}
+                placeholder="Complète"
+              />
+            </FormControl>
+          </SimpleGrid>
+
+          {/* Sous-titre */}
+          <FormControl mt={4}>
+            <FormLabel>Sous-titre (badges affichés)</FormLabel>
+            <Input
+              value={basicInfo.subtitle || ''}
+              onChange={e => setBasicInfo(b => ({ ...b, subtitle: e.target.value }))}
+              placeholder="Citaro 1 | € II | ❄️ | ♿"
             />
-          </Box>
-        </VStack>
+            <Text fontSize="sm" color="gray.600" mt={1}>
+              Exemple avec émojis : "Citaro 1 | € II | ❄️ | ♿"
+            </Text>
+          </FormControl>
 
-        {/* COLONNE DROITE - Galerie et Actions */}
-        <VStack align="stretch" spacing={6}>
-          {/* Galerie */}
-          <Box bg="white" p={6} borderRadius="lg" shadow="sm" border="1px" borderColor="gray.200">
-            <Heading size="md" mb={4}>🖼️ Galerie</Heading>
-            <GalleryManager vehicle={vehicle} onUpdate={loadAll} />
-          </Box>
+          <Text fontSize="xs" color="blue.600" mt={4} fontStyle="italic">
+            💡 Les caractéristiques techniques sont automatiquement mises à jour en fonction des champs ci-dessus
+          </Text>
+        </Box>
 
-          {/* Usages récents */}
-          <Box bg="white" p={6} borderRadius="lg" shadow="sm" border="1px" borderColor="gray.200">
-            <Heading size="md" mb={4}>📊 Usages récents</Heading>
-            
-            <VStack spacing={3} align="stretch">
-              {usages.slice(0, 5).map((usage, i) => (
-                <Box key={i} p={3} bg="gray.50" borderRadius="md">
-                  <HStack justify="space-between">
-                    <Text fontWeight="bold">{new Date(usage.date).toLocaleDateString()}</Text>
-                    <Badge>{usage.kilometres} km</Badge>
-                  </HStack>
-                  {usage.trajet && <Text fontSize="sm" color="gray.600">{usage.trajet}</Text>}
-                </Box>
-              ))}
-            </VStack>
-
-            <Divider my={4} />
-            
-            <VStack spacing={3}>
-              <HStack w="100%">
-                <Input
-                  type="date"
-                  value={newUsage.date || ''}
-                  onChange={(e) => setNewUsage({...newUsage, date: e.target.value})}
-                />
-                <Input
-                  type="number"
-                  placeholder="Kilomètres"
-                  value={newUsage.kilometres || ''}
-                  onChange={(e) => setNewUsage({...newUsage, kilometres: e.target.value})}
-                />
-              </HStack>
-              <Input
-                placeholder="Trajet (optionnel)"
-                value={newUsage.trajet || ''}
-                onChange={(e) => setNewUsage({...newUsage, trajet: e.target.value})}
-              />
-              <Button onClick={addUsage} colorScheme="blue" size="sm" w="100%">
-                Ajouter usage
-              </Button>
-            </VStack>
-          </Box>
-
-          {/* Rapports de maintenance */}
-          <Box bg="white" p={6} borderRadius="lg" shadow="sm" border="1px" borderColor="gray.200">
-            <Heading size="md" mb={4}>🔧 Maintenance</Heading>
-            
-            <VStack spacing={3} align="stretch">
-              {reports.slice(0, 3).map((report, i) => (
-                <Box key={i} p={3} bg="gray.50" borderRadius="md">
-                  <Text fontWeight="bold">{report.title}</Text>
-                  <Text fontSize="sm" color="gray.600">{report.description}</Text>
-                  <Text fontSize="xs" color="gray.500">
-                    {new Date(report.createdAt).toLocaleDateString()}
-                  </Text>
-                </Box>
-              ))}
-            </VStack>
-
-            <Divider my={4} />
-            
-            <VStack spacing={3}>
-              <Input
-                placeholder="Titre du rapport"
-                value={newReport.title || ''}
-                onChange={(e) => setNewReport({...newReport, title: e.target.value})}
-              />
+        {/* Section Textes descriptifs */}
+        <Box bg="green.50" p={6} borderRadius="lg" border="1px solid" borderColor="green.200">
+          <Heading size="md" mb={4}>📄 Textes descriptifs</Heading>
+          <VStack spacing={4}>
+            <FormControl>
+              <FormLabel>Description</FormLabel>
               <Textarea
-                placeholder="Description"
-                value={newReport.description || ''}
-                onChange={(e) => setNewReport({...newReport, description: e.target.value})}
-                rows={3}
+                value={basicInfo.description || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, description: e.target.value }))}
+                rows={4}
+                placeholder="Ce véhicule est un exemple emblématique..."
               />
-              <Button onClick={addReport} colorScheme="green" size="sm" w="100%">
-                Ajouter rapport
-              </Button>
-            </VStack>
-          </Box>
-        </VStack>
-      </SimpleGrid>
+              <Text fontSize="xs" color="gray.600" mt={1}>
+                Apparaît dans la section "Description" sur la page publique
+              </Text>
+            </FormControl>
+
+            <FormControl>
+              <FormLabel>Histoire</FormLabel>
+              <Textarea
+                value={basicInfo.history || ''}
+                onChange={e => setBasicInfo(b => ({ ...b, history: e.target.value }))}
+                rows={6}
+                placeholder="Le Mercedes-Benz Citaro est un autobus urbain..."
+              />
+              <Text fontSize="xs" color="gray.600" mt={1}>
+                Apparaît dans la section "Histoire" sur la page publique
+              </Text>
+            </FormControl>
+          </VStack>
+        </Box>
+
+        {/* Section Galerie */}
+        <Box bg="purple.50" p={6} borderRadius="lg" border="1px solid" borderColor="purple.200">
+          <Heading size="md" mb={4}>📸 Galerie photos</Heading>
+          <GalleryManager
+            value={basicInfo.gallery || []}
+            onChange={gallery => setBasicInfo(b => ({ ...b, gallery }))}
+            uploadEndpoint={`${apiClient.baseURL}/vehicles/${parc}/gallery`}
+            deleteEndpoint={`${apiClient.baseURL}/vehicles/${parc}/gallery`}
+            authHeader={apiClient.authHeader}
+          />
+          <Text fontSize="sm" color="gray.600" mt={2}>
+            La première image peut servir de fond si aucune image de fond spécifique n'est définie. Les autres images apparaissent dans le carrousel.
+          </Text>
+        </Box>
+
+        {/* Bouton de sauvegarde principal */}
+        <Box textAlign="center" py={4}>
+          <Button
+            leftIcon={<FiSave />}
+            colorScheme="blue"
+            size="lg"
+            onClick={save}
+            isLoading={saving}
+            loadingText="Sauvegarde en cours..."
+          >
+            💾 Sauvegarder toutes les modifications
+          </Button>
+          <Text fontSize="sm" color="gray.600" mt={2}>
+            Les modifications seront visibles immédiatement sur la page publique
+          </Text>
+        </Box>
+      </VStack>
     </Box>
   );
 }

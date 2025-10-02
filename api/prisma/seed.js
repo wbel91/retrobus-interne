@@ -2,9 +2,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const count = await prisma.vehicle.count();
-  if (count > 0) {
-    console.log(`Seed ignoré: ${count} véhicules déjà présents.`);
+  const exists = await prisma.vehicle.findUnique({ where: { parc: '920' } });
+  if (exists) {
+    console.log('Véhicule 920 déjà présent, seed ignoré.');
     return;
   }
 
@@ -12,35 +12,36 @@ async function main() {
     data: {
       parc: '920',
       type: 'Bus',
-      modele: 'Citaro',
+      modele: 'Citaro ♿',
       marque: 'Mercedes-Benz',
       subtitle: 'Citaro 1 | € II | ❄️ | ♿',
       immat: 'FG-920-RE',
       etat: 'Préservé',
       energie: 'Diesel',
       miseEnCirculation: new Date('2001-07-01'),
-      description: 'Premier Citaro de la collection, ex-réseau urbain.',
-      history: 'Mis en service en 2001, réformé en 2023 puis préservé par l\'association.',
+      description: 'Bus urbain accessible, représentatif des débuts 2000.',
+      history: 'Entré en service en juillet 2001. Ex-592/720/X/920 selon réaffectations internes. Préservé par l’association après réforme.',
       caracteristiques: JSON.stringify({
-        anneeConstruction: '2001',
-        constructeurCarrosserie: 'EvoBus',
-        numeroFlotte: '920',
-        ancienNumero: '3920',
-        longueur: '12m',
-        largeur: '2,55m',
-        hauteur: '3,07m',
-        nombrePlaces: '109',
-        placesAssises: '43',
-        motorisation: 'Mercedes OM906hLA',
-        puissance: '260 Ch',
+        fleetNumbers: '592 / 720 / X / 920',
+        constructeur: 'Mercedes-Benz',
+        miseEnCirculationTexte: 'juillet 2001',
+        longueur: '11,95 m',
+        placesAssises: '32',
+        placesDebout: '64',
+        ufr: '1',
+        preservePar: 'Association RétroBus Essonne',
         normeEuro: 'Euro II',
-        boiteVitesses: 'ZF',
-        equipementsSpeciaux: 'Climatisation, Accès PMR'
+        moteur: 'Mercedes-Benz OM906hLA - 279 ch',
+        boiteVitesses: 'Automatique ZF5HP-502C',
+        nombrePortes: '2',
+        livree: 'Grise',
+        girouette: 'Duhamel LED Oranges + Pastilles Vertes',
+        climatisation: 'Complète'
       })
     }
   });
 
-  console.log('Seed terminé: véhicule 920 créé.');
+  console.log('Seed OK: véhicule 920 créé.');
 }
 
 main()
