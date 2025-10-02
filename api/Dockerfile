@@ -2,27 +2,24 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copier manifest
+# Fix OpenSSL AVANT tout (important pour Prisma)
+RUN apk add --no-cache openssl
+
+# Copier les fichiers nécessaires pour la génération
 COPY package*.json ./
 COPY prisma ./prisma
 
-# Installer (avec dev deps pour générer Prisma)
+# Installer les dépendances (avec dev deps pour générer Prisma)
 RUN npm ci
 
-# Générer Prisma client
+# Générer Prisma client AVEC les nouveaux binary targets
 RUN npx prisma generate
 
-# (Optionnel) appliquer migrations (si tu commits les migrations)
-# RUN npx prisma migrate deploy
-
-# Copier le reste
+# Copier le reste du code
 COPY . .
 
-# Optimiser: retirer dev deps (prisma) après génération
+# Optimiser: retirer dev deps après génération
 RUN npm prune --production
-
-# Fix OpenSSL pour Prisma sur Alpine Linux (corrigé)
-RUN apk add --no-cache openssl
 
 ENV NODE_ENV=production
 EXPOSE 4000
