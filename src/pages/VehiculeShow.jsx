@@ -13,6 +13,14 @@ import GalleryManager from '../components/vehicle/GalleryManager.jsx';
 import CaracteristiquesEditor from '../components/vehicle/CaracteristiquesEditor.jsx';
 
 const PUBLIC_BASE = import.meta.env.VITE_PUBLIC_BASE || window.location.origin;
+const API_BASE = import.meta.env.VITE_API_URL || apiClient.baseURL || '';
+
+function resolveImageSrc(src) {
+  if (!src) return src;
+  if (src.startsWith('http://') || src.startsWith('https://')) return src;
+  if (src.startsWith('/')) return `${API_BASE}${src}`;
+  return `${API_BASE}/${src}`;
+}
 
 function EtatBadge({ etat }) {
   const colorMap = {
