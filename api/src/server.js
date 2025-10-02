@@ -15,11 +15,14 @@ app.use(express.json());
 app.use(cors({
   origin: [
     'http://localhost:5173', // Interne (Vite dev)
-    'http://localhost:4173', // Interne (Vite preview)
-    'http://localhost:3000', // Externe
+    'http://localhost:4173', // Interne (Vite preview) 
+    'http://localhost:3000',  // Externe
+    'http://localhost:5174',  // Au cas où
     'https://www.association-rbe.fr',
-    'https://retrobus-interne.fr'
-  ]
+    'https://retrobus-interne.fr',
+    '*' // Temporaire pour Railway
+  ],
+  credentials: true
 }));
 
 let prisma;
