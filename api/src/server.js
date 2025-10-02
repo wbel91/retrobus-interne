@@ -164,27 +164,43 @@ app.put('/vehicles/:parc', requireCreator, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
-    const {
-      etat, immat, energie, miseEnCirculation, modele, type,
-      marque, subtitle, description, history, caracteristiques, gallery
-    } = req.body || {};
-    
-    const data = {};
-    if (etat !== undefined) data.etat = etat;
-    if (immat !== undefined) data.immat = immat || null;
-    if (energie !== undefined) data.energie = energie || null;
-    if (modele !== undefined) data.modele = modele || '';
-    if (type !== undefined) data.type = type || 'Bus';
-    if (marque !== undefined) data.marque = marque || null;
-    if (subtitle !== undefined) data.subtitle = subtitle || null;
-    if (description !== undefined) data.description = description || null;
-    if (history !== undefined) data.history = history || null;
-    if (caracteristiques !== undefined) data.caracteristiques = stringifyJsonField(caracteristiques);
-    if (gallery !== undefined) data.gallery = stringifyJsonField(gallery);
-    if (miseEnCirculation !== undefined)
-      data.miseEnCirculation = miseEnCirculation ? new Date(miseEnCirculation) : null;
+    const body = req.body;
 
-    const updated = await prisma.vehicle.update({ where: { parc }, data });
+    // Extraire les champs destinés à caracteristiques
+    const caracteristiquesKeys = [
+      'anneeConstruction','constructeurCarrosserie','numeroFlotte','ancienNumero',
+      'longueur','largeur','hauteur','nombrePlaces','placesAssises',
+      'motorisation','puissance','normeEuro','boiteVitesses','equipementsSpeciaux'
+    ];
+
+    const caracteristiquesObj = {};
+    caracteristiquesKeys.forEach(k => {
+      if (body[k] !== undefined && body[k] !== null && body[k] !== '') {
+        caracteristiquesObj[k] = body[k];
+        delete body[k]; // on retire du body principal
+      }
+    });
+
+    // Charger l’existant pour merger proprement
+    const existing = await prisma.vehicle.findUnique({ where: { parc } });
+    if (!existing) return res.status(404).json({ error: 'Véhicule introuvable' });
+
+    let mergedCaracteristiques = {};
+    if (existing.caracteristiques) {
+      try { mergedCaracteristiques = JSON.parse(existing.caracteristiques); } catch {}
+    }
+    mergedCaracteristiques = { ...mergedCaracteristiques, ...caracteristiquesObj };
+
+    const updated = await prisma.vehicle.update({
+      where: { parc },
+      data: {
+        ...body,
+        caracteristiques: Object.keys(mergedCaracteristiques).length
+          ? JSON.stringify(mergedCaracteristiques)
+          : null
+      }
+    });
+
     res.json(transformVehicle(updated));
   } catch (e) {
     console.error(e);
