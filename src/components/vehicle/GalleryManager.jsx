@@ -48,20 +48,28 @@ export default function GalleryManager({
     const fd = new FormData();
     [...files].forEach(f => fd.append('images', f));
     try {
-      const res = await fetch(uploadEndpoint, {
-        method: 'POST',
-        headers: { 'Authorization': authHeader },
-        body: fd
-      });
-      if (!res.ok) throw new Error();
+      const res = await fetch(uploadEndpoint, { method:'POST', headers:{ 'Authorization': authHeader }, body: fd });
+      if (!res.ok) {
+        const txt = await res.text().catch(()=> '' );
+        console.error('Upload failed', res.status, txt);
+        throw new Error();
+      }
       const j = await res.json();
       onChange(j.gallery || []);
       toast({ status: 'success', title: 'Images ajoutées' });
-    } catch {
+    } catch (err) {
+      console.error('Upload error', err);
       toast({ status: 'error', title: 'Échec upload' });
     } finally {
       setUploading(false);
     }
+  };
+
+  const toSrc = (g) => {
+    if (!g) return g;
+    if (g.startsWith('http://') || g.startsWith('https://')) return g;
+    // g commence par /media -> on préfixe base
+    return (import.meta.env.VITE_API_URL || '') + g;
   };
 
   return (
@@ -80,7 +88,7 @@ export default function GalleryManager({
       <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
         {value.map((g, i) => (
           <Box key={g + i} border="1px solid" borderColor="gray.200" borderRadius="md" p={1}>
-            <Image src={g} w="100%" h="110px" objectFit="cover" borderRadius="sm" />
+            <Image src={toSrc(g)} w="100%" h="110px" objectFit="cover" borderRadius="sm" />
             <HStack mt={1} justify="space-between">
               <HStack>
                 <IconButton

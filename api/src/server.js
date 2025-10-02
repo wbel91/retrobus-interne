@@ -13,18 +13,21 @@ const PORT = process.env.PORT || 4000;
 // Config
 app.use(express.json());
 app.use(cors({
-  origin: [
-    'http://localhost:5173',     // Interne (Vite dev)
-    'http://localhost:4173',     // Interne (Vite preview) 
-    'http://localhost:3000',     // Externe
-    'http://localhost:5174',     // Au cas où
-    'https://www.association-rbe.fr',
-    'https://association-rbe.fr',
-    'https://retrobus-interne.fr',
-    'https://www.retrobus-interne.fr',  // ← AJOUTER CETTE LIGNE
-    'https://refreshing-adaptation-rbe-serveurs.up.railway.app', // Ton API elle-même
-    '*' // Temporaire - à enlever plus tard
-  ],
+  origin: (origin, cb) => {
+    const allowed = [
+      'http://localhost:5173',
+      'http://localhost:4173',
+      'http://localhost:3000',
+      'http://localhost:5174',
+      'https://www.association-rbe.fr',
+      'https://association-rbe.fr',
+      'https://retrobus-interne.fr',
+      'https://www.retrobus-interne.fr',
+      'https://refreshing-adaptation-rbe-serveurs.up.railway.app'
+    ];
+    if (!origin || allowed.includes(origin)) return cb(null, true);
+    return cb(new Error('Origin not allowed'));
+  },
   credentials: true
 }));
 
@@ -240,6 +243,15 @@ app.put('/vehicles/:parc', requireCreator, async (req, res) => {
       }
     });
 
+    if (Array.isArray(body.caracteristiques)) {
+      dataUpdate.caracteristiques = JSON.stringify(body.caracteristiques);
+      delete body.caracteristiques;
+    }
+
+    if (body.backgroundImage !== undefined) {
+      dataUpdate.backgroundImage = body.backgroundImage; // null pour effacer OK
+      delete body.backgroundImage;
+    }
     if (body.backgroundPosition !== undefined) {
       dataUpdate.backgroundPosition = body.backgroundPosition;
       delete body.backgroundPosition;

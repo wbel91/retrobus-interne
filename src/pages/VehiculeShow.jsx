@@ -391,8 +391,9 @@ export default function VehiculeShow() {
   const save = async () => {
     try {
       setSaving(true);
+      const etatFinal = basicInfo.statut || basicInfo.etat;
       await apiClient.put(`/vehicles/${parc}`, {
-        etat: basicInfo.etat,
+        etat: etatFinal,
         marque: basicInfo.marque,
         modele: basicInfo.modele,
         type: basicInfo.type,
