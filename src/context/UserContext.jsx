@@ -2,66 +2,50 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const UserContext = createContext(null);
 
-// Annuaire minimal
-const DIRECTORY = {
-  "g.champenois":   { prenom: "GaÎlle",   nom: "CHAMPENOIS" },
-  "n.tetillon":     { prenom: "Nathan",   nom: "TETILLON" },
-  "w.belaidi":      { prenom: "Waiyl",    nom: "BELAIDI" },
-  "m.ravichandran": { prenom: "Methusan", nom: "RAVICHANDRAN" },
-};
-
-// Base de donnÈes des mots de passe
-const USER_PASSWORDS = {
-  "g.champenois":   "RBE2025TEST",
-  "n.tetillon":     "RBE2025TEST",
-  "w.belaidi":      "RBE2025TEST", 
-  "m.ravichandran": "RBE2025TEST",
-};
-
-// Liste courte d'administrateurs
-const ADMIN_USERS = new Set([
-  "w.belaidi",  // Seul administrateur autorisÈ
-]);
-
-// Fonction de validation des identifiants
-export const validateCredentials = (matricule, password) => {
-  const normalizedMatricule = String(matricule || "").toLowerCase();
-  
-  if (!DIRECTORY[normalizedMatricule]) {
-    return { isValid: false, error: "Utilisateur non trouvÈ" };
-  }
-  
-  if (USER_PASSWORDS[normalizedMatricule] !== password) {
-    return { isValid: false, error: "Mot de passe incorrect" };
-  }
-  
-  return { isValid: true, error: null };
-};
-
 export function UserProvider({ children }) {
-  const [matricule, setMatricule] = useState(() => localStorage.getItem("matricule") || "");
+  const [token, setToken] = useState(() => localStorage.getItem('authToken') || '');
+  const [user, setUser] = useState(() => {
+    const raw = localStorage.getItem('authUser');
+    return raw ? JSON.parse(raw) : null;
+  });
 
   useEffect(() => {
-    if (matricule) localStorage.setItem("matricule", matricule);
-  }, [matricule]);
+    if (token) localStorage.setItem('authToken', token);
+    else localStorage.removeItem('authToken');
+  }, [token]);
 
-  const { prenom, nom } = useMemo(() => {
-    const key = String(matricule || "").toLowerCase();
-    const entry = DIRECTORY[key];
-    return {
-      prenom: entry?.prenom || "",
-      nom: entry?.nom || "",
-    };
-  }, [matricule]);
+  useEffect(() => {
+    if (user) localStorage.setItem('authUser', JSON.stringify(user));
+    else localStorage.removeItem('authUser');
+  }, [user]);
 
-  const isAdmin = useMemo(() => {
-    if (!matricule) return false;
-    return ADMIN_USERS.has(String(matricule).toLowerCase());
-  }, [matricule]);
+  const isAuthenticated = !!token;
+  const username = user?.username || '';
+  const prenom = user?.prenom || '';
+  const nom = user?.nom || '';
+  const roles = user?.roles || [];
+  const isAdmin = roles.includes('ADMIN');
+
+  const logout = () => {
+    setToken('');
+    setUser(null);
+  };
 
   const value = useMemo(
-    () => ({ matricule, setMatricule, prenom, nom, isAdmin }),
-    [matricule, prenom, nom, isAdmin]
+    () => ({
+      token,
+      setToken,
+      user,
+      setUser,
+      isAuthenticated,
+      username,
+      prenom,
+      nom,
+      roles,
+      isAdmin,
+      logout
+    }),
+    [token, user, isAuthenticated, username, prenom, nom, roles, isAdmin]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
@@ -69,4 +53,23 @@ export function UserProvider({ children }) {
 
 export function useUser() {
   return useContext(UserContext);
+}
+
+export async function login(username, password) {
+  const base = import.meta.env.VITE_API_URL;
+  if (!base) throw new Error('API non configur√©e (VITE_API_URL manquante)');
+  const res = await fetch(`${base}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  if (!res.ok) {
+    let msg = '√âchec de connexion';
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
 }

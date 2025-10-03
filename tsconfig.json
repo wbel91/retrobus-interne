@@ -42,7 +42,7 @@
     "src",
     "vite.config.*",
     "env.d.ts"
-  ],
+, "api/src/auth"  ],
   "exclude": [
     "node_modules",
     "dist",

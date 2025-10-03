@@ -6,14 +6,14 @@ import {
   useDisclosure, useToast, HStack, Badge, VStack, Stack, Select,
   Tooltip, VisuallyHidden
 } from "@chakra-ui/react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import { flashAPI } from "../api/flash.js";
 import logo from "../assets/retro_intranet_essonne.svg";
 import infoPng from "../assets/icons/flash-info.png";
 import notifPng from "../assets/icons/flash-notif.png";
 import posPng from "../assets/icons/flash-pos.png";
-import { Navigation } from './TopNavLink'; // Import uniquement Navigation
+import { Navigation } from './TopNavLink';
 
 const WIN = {
   red:    "#2e538d",
@@ -97,7 +97,8 @@ function BellIcon(props) {
 }
 
 export default function Header() {
-  const { prenom, isAdmin, matricule } = useUser();
+  const { logout, prenom, nom, isAuthenticated, isAdmin, matricule } = useUser();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const manage = useDisclosure();
@@ -107,6 +108,61 @@ export default function Header() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ message: "", category: "INFO", active: true, expiresAt: "" });
+
+  // Fonction de déconnexion
+  const handleLogout = () => {
+    logout(); // Efface token + user du localStorage
+    navigate('/login'); // Redirige vers la page de login
+    toast({
+      title: "Déconnexion réussie",
+      description: "Vous avez été déconnecté avec succès",
+      status: "info",
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
+  // Gestion de l'inactivité (10 minutes)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let inactivityTimer;
+    const INACTIVITY_TIME = 10 * 60 * 1000; // 10 minutes en millisecondes
+
+    const resetTimer = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        logout();
+        navigate('/login');
+        toast({
+          title: "Session expirée",
+          description: "Vous avez été déconnecté pour inactivité (10 minutes)",
+          status: "warning",
+          duration: 5000,
+          isClosable: true,
+        });
+      }, INACTIVITY_TIME);
+    };
+
+    // Événements qui réinitialisent le timer d'inactivité
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    
+    // Initialiser le timer
+    resetTimer();
+
+    // Ajouter les écouteurs d'événements
+    events.forEach(event => {
+      document.addEventListener(event, resetTimer, true);
+    });
+
+    // Nettoyer au démontage
+    return () => {
+      clearTimeout(inactivityTimer);
+      events.forEach(event => {
+        document.removeEventListener(event, resetTimer, true);
+      });
+    };
+  }, [isAuthenticated, logout, navigate, toast]);
 
   useEffect(() => {
     async function fetchFlashes() {
@@ -301,7 +357,7 @@ export default function Header() {
 
             <Menu>
               <MenuButton as={Button} colorScheme="red">
-                Bonjour, {prenom}
+                Bonjour, {prenom || 'Utilisateur'}
               </MenuButton>
               <MenuList>
                 <MenuItem as={RouterLink} to="/adhesion">
@@ -310,7 +366,7 @@ export default function Header() {
                 <MenuItem as={RouterLink} to="/retromail">
                   RétroMail
                 </MenuItem>
-                <MenuItem>
+                <MenuItem onClick={handleLogout} color="red.500">
                   Déconnexion
                 </MenuItem>
               </MenuList>
@@ -459,7 +515,6 @@ export default function Header() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    {/* END of modals */}
     </Box>
   );
 }

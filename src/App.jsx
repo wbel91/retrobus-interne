@@ -1,6 +1,8 @@
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
+import { useUser } from "./context/UserContext";
 import Header from "./components/Header";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 // Pages principales
 import Dashboard from "./pages/Dashboard";
@@ -16,25 +18,35 @@ import PrestaEvenements from "./pages/PrestaEvenements";
 import Retromail from "./pages/Retromail";
 
 export default function App() {
+  const { isAuthenticated } = useUser();
+  const location = useLocation();
+  
+  // N'afficher le header que si l'utilisateur est connecté et pas sur la page de login
+  const showHeader = isAuthenticated && location.pathname !== '/login';
+
   return (
     <>
-      <Header />
+      {showHeader && <Header />}
       <Routes>
-        <Route path="/dashboard/*" element={<Dashboard />} />
-        <Route path="/dashboard/home" element={<DashboardHome />} />
-        <Route path="/dashboard/myrbe" element={<MyRBE />} />
-        <Route path="/dashboard/myrbe/:parc" element={<MyRBEActions />} />
+        <Route path="/login" element={<Login />} />
+        
+        {/* Toutes les autres routes sont protégées */}
+        <Route path="/dashboard/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/dashboard/home" element={<ProtectedRoute><DashboardHome /></ProtectedRoute>} />
+        <Route path="/dashboard/myrbe" element={<ProtectedRoute><MyRBE /></ProtectedRoute>} />
+        <Route path="/dashboard/myrbe/:parc" element={<ProtectedRoute><MyRBEActions /></ProtectedRoute>} />
         
         {/* VÉHICULES: 2 pages consolidées */}
-        <Route path="/dashboard/vehicules" element={<Vehicules />} />
-        <Route path="/dashboard/vehicules/:parc" element={<VehiculeShow />} />
+        <Route path="/dashboard/vehicules" element={<ProtectedRoute><Vehicules /></ProtectedRoute>} />
+        <Route path="/dashboard/vehicules/:parc" element={<ProtectedRoute><VehiculeShow /></ProtectedRoute>} />
         
-        <Route path="/adhesion" element={<Adhesion />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/mobile/v/:parc" element={<MobileVehicle />} />
-        <Route path="/presta-evenements" element={<PrestaEvenements />} />
-        <Route path="/retromail" element={<Retromail />} />
-        <Route path="*" element={<DashboardHome />} />
+        <Route path="/adhesion" element={<ProtectedRoute><Adhesion /></ProtectedRoute>} />
+        <Route path="/mobile/v/:parc" element={<ProtectedRoute><MobileVehicle /></ProtectedRoute>} />
+        <Route path="/presta-evenements" element={<ProtectedRoute><PrestaEvenements /></ProtectedRoute>} />
+        <Route path="/retromail" element={<ProtectedRoute><Retromail /></ProtectedRoute>} />
+        
+        {/* Redirection par défaut vers le dashboard si connecté, sinon vers login */}
+        <Route path="*" element={<ProtectedRoute><DashboardHome /></ProtectedRoute>} />
       </Routes>
     </>
   );
