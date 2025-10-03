@@ -9,8 +9,7 @@ import {
 import { Link as RouterLink } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { FiEdit, FiPlus, FiGrid } from 'react-icons/fi';
-import { apiClient } from '../api/config.js';
-import { useUser } from '../context/UserContext';
+import { vehiculesAPI } from '../api/vehicles.js'; // Import de l'API vehicles
 
 const PUBLIC_BASE = import.meta.env.VITE_PUBLIC_BASE || window.location.origin;
 
@@ -22,17 +21,11 @@ const Vehicules = () => {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const toast = useToast();
   const qrCanvasRef = useRef(null);
-  const { isAuthenticated } = useUser();
 
   const fetchList = useCallback(async (signal) => {
     try {
       setLoading(true);
-      let vehicles;
-      if (q.trim()) {
-        vehicles = await apiClient.get(`/vehicles?q=${encodeURIComponent(q.trim())}`);
-      } else {
-        vehicles = await apiClient.get('/vehicles');
-      }
+      const vehicles = await vehiculesAPI.getAll();
       setData(Array.isArray(vehicles) ? vehicles : []);
     } catch (e) {
       if (e.name !== "AbortError") {
@@ -47,15 +40,13 @@ const Vehicules = () => {
     } finally {
       setLoading(false);
     }
-  }, [q, toast]);
+  }, [toast]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    
     const controller = new AbortController();
     fetchList(controller.signal);
     return () => controller.abort();
-  }, [fetchList, isAuthenticated]);
+  }, [fetchList]);
 
   const filtered = data.filter(v => {
     if (!q.trim()) return true;

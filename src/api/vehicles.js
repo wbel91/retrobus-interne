@@ -1,10 +1,4 @@
 import { apiClient } from './config.js';
-const express = require("express");
-const router = express.Router();
-
-let vehicles = [
-  { id: "bus920", name: "RétroBus 920" },
-];
 
 // API pour les véhicules
 export const vehiculesAPI = {
@@ -87,6 +81,11 @@ export const vehiculesAPI = {
     return response.json();
   },
   
+  // Supprimer une image de galerie
+  deleteGalleryImage: async (parc, image) => {
+    return apiClient.delete(`/vehicles/${parc}/gallery`, { image });
+  },
+  
   // Générer QR Code
   generateQR: async (parc) => {
     return apiClient.get(`/vehicles/${parc}/qr`);
@@ -126,14 +125,3 @@ export const vehiculesAPI = {
     return apiClient.delete(`/reports/${id}`);
   }
 };
-
-// GET tous les véhicules
-router.get("/", (req, res) => res.json(vehicles));
-
-// POST ajouter un véhicule
-router.post("/", (req, res) => {
-  vehicles.push(req.body);
-  res.status(201).json(req.body);
-});
-
-module.exports = router;
