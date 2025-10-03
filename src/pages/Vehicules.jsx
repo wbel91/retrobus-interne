@@ -9,7 +9,8 @@ import {
 import { Link as RouterLink } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { FiEdit, FiPlus, FiGrid } from 'react-icons/fi';
-import { apiClient } from '../api/config'; // Import du client API avec authentification
+import { apiClient } from '../api/config.js';
+import { useUser } from '../context/UserContext';
 
 const PUBLIC_BASE = import.meta.env.VITE_PUBLIC_BASE || window.location.origin;
 
@@ -21,16 +22,15 @@ const Vehicules = () => {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const toast = useToast();
   const qrCanvasRef = useRef(null);
+  const { isAuthenticated } = useUser();
 
   const fetchList = useCallback(async (signal) => {
     try {
       setLoading(true);
       let vehicles;
       if (q.trim()) {
-        // Pour la recherche, utiliser apiClient.get avec paramètres
         vehicles = await apiClient.get(`/vehicles?q=${encodeURIComponent(q.trim())}`);
       } else {
-        // Pour la liste complète
         vehicles = await apiClient.get('/vehicles');
       }
       setData(Array.isArray(vehicles) ? vehicles : []);
@@ -38,7 +38,11 @@ const Vehicules = () => {
       if (e.name !== "AbortError") {
         console.error(e);
         setData([]);
-        toast({ status: "error", title: "Impossible de charger la liste" });
+        toast({ 
+          status: "error", 
+          title: "Impossible de charger la liste",
+          description: e.message
+        });
       }
     } finally {
       setLoading(false);
@@ -46,104 +50,98 @@ const Vehicules = () => {
   }, [q, toast]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const controller = new AbortController();
     fetchList(controller.signal);
     return () => controller.abort();
-  }, [fetchList]);
+  }, [fetchList, isAuthenticated]);
 
-  const openQrModal = (vehicle) => {
+  const filtered = data.filter(v => {
+    if (!q.trim()) return true;
+    const needle = q.toLowerCase();
+    return [v.parc, v.modele, v.marque, v.immat]
+      .filter(Boolean)
+      .some(field => field.toLowerCase().includes(needle));
+  });
+
+  const handleQRShow = (vehicle) => {
     setSelectedVehicle(vehicle);
     setQrModalOpen(true);
   };
 
-  const closeQrModal = () => {
-    setQrModalOpen(false);
-    setSelectedVehicle(null);
-  };
-
-  const downloadQr = () => {
-    if (!qrCanvasRef.current) return;
-    const canvas = qrCanvasRef.current.querySelector('canvas');
-    if (!canvas) return;
-    
-    const link = document.createElement('a');
-    link.download = `qr-${selectedVehicle?.parc || 'vehicle'}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+  const downloadQR = () => {
+    const canvas = qrCanvasRef.current?.querySelector('canvas');
+    if (canvas) {
+      const url = canvas.toDataURL();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qr-${selectedVehicle?.parc || 'vehicle'}.png`;
+      a.click();
+    }
   };
 
   return (
     <Box p={6}>
       <Flex justify="space-between" align="center" mb={6}>
-        <Heading size="lg">Gestion des Véhicules</Heading>
-        <Button 
-          as={RouterLink} 
-          to="/dashboard/vehicules/nouveau" 
-          leftIcon={<FiPlus />} 
+        <Heading>Véhicules</Heading>
+        <Button
+          as={RouterLink}
+          to="/dashboard/vehicules/nouveau"
+          leftIcon={<FiPlus />}
           colorScheme="blue"
         >
-          Nouveau Véhicule
+          Ajouter un véhicule
         </Button>
       </Flex>
 
       <Box mb={6}>
         <Input
-          placeholder="Rechercher par parc, modèle, marque..."
+          placeholder="Rechercher par parc, modèle, marque ou immatriculation..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          size="lg"
+          maxW="400px"
         />
       </Box>
 
       {loading ? (
-        <Center py={10}>
+        <Center py={20}>
           <Spinner size="xl" />
         </Center>
       ) : (
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
-          {data.map((vehicle) => (
-            <Card key={vehicle.parc} shadow="md" borderRadius="lg">
+          {filtered.map((vehicle) => (
+            <Card key={vehicle.parc} shadow="md">
               <CardHeader pb={2}>
                 <HStack justify="space-between">
-                  <Text fontWeight="bold" fontSize="lg">{vehicle.parc}</Text>
-                  <Badge 
-                    colorScheme={
-                      vehicle.etat === 'disponible' ? 'green' :
-                      vehicle.etat === 'en_panne' ? 'red' :
-                      vehicle.etat === 'maintenance' ? 'orange' : 'gray'
-                    }
-                  >
+                  <Heading size="md">{vehicle.parc}</Heading>
+                  <Badge colorScheme={vehicle.etat === 'disponible' ? 'green' : 'orange'}>
                     {vehicle.etat}
                   </Badge>
                 </HStack>
               </CardHeader>
-              
               <CardBody pt={0}>
                 <VStack align="start" spacing={2}>
-                  <Text><strong>{vehicle.marque} {vehicle.modele}</strong></Text>
-                  {vehicle.subtitle && <Text fontSize="sm" color="gray.600">{vehicle.subtitle}</Text>}
-                  {vehicle.immat && <Text fontSize="sm">Immat: {vehicle.immat}</Text>}
-                  <Text fontSize="sm">Type: {vehicle.type}</Text>
+                  <Text><strong>Modèle:</strong> {vehicle.modele || 'Non spécifié'}</Text>
+                  <Text><strong>Marque:</strong> {vehicle.marque || 'Non spécifiée'}</Text>
+                  {vehicle.immat && <Text><strong>Immat:</strong> {vehicle.immat}</Text>}
                   
-                  <HStack spacing={2} pt={2}>
-                    <Button 
-                      as={RouterLink} 
+                  <HStack spacing={2} pt={4} w="100%">
+                    <Button
+                      as={RouterLink}
                       to={`/dashboard/vehicules/${vehicle.parc}`}
-                      size="sm" 
                       leftIcon={<FiEdit />}
-                      colorScheme="blue"
-                      variant="outline"
+                      size="sm"
+                      flex={1}
                     >
                       Gérer
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
                       leftIcon={<FiGrid />}
-                      colorScheme="purple"
-                      variant="outline"
-                      onClick={() => openQrModal(vehicle)}
+                      size="sm"
+                      onClick={() => handleQRShow(vehicle)}
                     >
-                      QR Code
+                      QR
                     </Button>
                   </HStack>
                 </VStack>
@@ -153,21 +151,14 @@ const Vehicules = () => {
         </SimpleGrid>
       )}
 
-      {data.length === 0 && !loading && (
-        <Center py={10}>
-          <VStack>
-            <Text fontSize="lg" color="gray.500">Aucun véhicule trouvé</Text>
-            {q && (
-              <Button onClick={() => setQ("")} size="sm">
-                Effacer la recherche
-              </Button>
-            )}
-          </VStack>
+      {filtered.length === 0 && !loading && (
+        <Center py={20}>
+          <Text color="gray.500">Aucun véhicule trouvé</Text>
         </Center>
       )}
 
       {/* Modal QR Code */}
-      <Modal isOpen={qrModalOpen} onClose={closeQrModal} size="sm">
+      <Modal isOpen={qrModalOpen} onClose={() => setQrModalOpen(false)} isCentered>
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>QR Code - {selectedVehicle?.parc}</ModalHeader>
@@ -175,20 +166,17 @@ const Vehicules = () => {
           <ModalBody pb={6}>
             <VStack spacing={4}>
               <Box ref={qrCanvasRef}>
-                {selectedVehicle && (
-                  <QRCodeCanvas
-                    value={`${PUBLIC_BASE}/vehicule/${selectedVehicle.parc}`}
-                    size={200}
-                    level="M"
-                    includeMargin={true}
-                  />
-                )}
+                <QRCodeCanvas
+                  value={`${PUBLIC_BASE}/mobile/v/${selectedVehicle?.parc}`}
+                  size={200}
+                  level="M"
+                />
               </Box>
-              <Text fontSize="sm" textAlign="center" color="gray.600">
-                {PUBLIC_BASE}/vehicule/{selectedVehicle?.parc}
+              <Text fontSize="sm" color="gray.600" textAlign="center">
+                {`${PUBLIC_BASE}/mobile/v/${selectedVehicle?.parc}`}
               </Text>
-              <Button onClick={downloadQr} colorScheme="blue" size="sm">
-                Télécharger QR Code
+              <Button onClick={downloadQR} colorScheme="blue">
+                Télécharger
               </Button>
             </VStack>
           </ModalBody>

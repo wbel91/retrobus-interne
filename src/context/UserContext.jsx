@@ -3,20 +3,26 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 const UserContext = createContext(null);
 
 export function UserProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('authToken') || '');
+  const [token, setToken] = useState(() => localStorage.getItem('token') || '');
   const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem('authUser');
+    const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
   });
 
   useEffect(() => {
-    if (token) localStorage.setItem('authToken', token);
-    else localStorage.removeItem('authToken');
+    if (token) {
+      localStorage.setItem('token', token);
+    } else {
+      localStorage.removeItem('token');
+    }
   }, [token]);
 
   useEffect(() => {
-    if (user) localStorage.setItem('authUser', JSON.stringify(user));
-    else localStorage.removeItem('authUser');
+    if (user) {
+      localStorage.setItem('user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('user');
+    }
   }, [user]);
 
   const isAuthenticated = !!token;
@@ -25,10 +31,13 @@ export function UserProvider({ children }) {
   const nom = user?.nom || '';
   const roles = user?.roles || [];
   const isAdmin = roles.includes('ADMIN');
+  const matricule = user?.username || '';
 
   const logout = () => {
     setToken('');
     setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   };
 
   const value = useMemo(
@@ -43,16 +52,21 @@ export function UserProvider({ children }) {
       nom,
       roles,
       isAdmin,
+      matricule,
       logout
     }),
-    [token, user, isAuthenticated, username, prenom, nom, roles, isAdmin]
+    [token, user, isAuthenticated, username, prenom, nom, roles, isAdmin, matricule]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
 export function useUser() {
-  return useContext(UserContext);
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error("useUser must be used within a UserProvider");
+  }
+  return context;
 }
 
 export async function login(username, password) {
