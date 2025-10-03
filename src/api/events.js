@@ -1,43 +1,34 @@
-const express = require("express");
-const router = express.Router();
+import { apiClient } from './config.js';
 
-// Stockage en mémoire (remplace par une base plus tard)
-let events = [
-  {
-    id: "halloween2025",
-    title: "RétroWouh ! Halloween",
-    date: "2025-10-31",
-    time: "20:00",
-    location: "Salle des Fêtes de Villebon",
-    adultPrice: 15,
-    childPrice: 8,
-    description: "Soirée spéciale Halloween avec animations, musique et surprises !",
-    helloAssoUrl: "https://www.helloasso.com/associations/rbe/evenements/halloween2025",
-    vehicleId: "bus920",
+// API pour les événements
+export const eventsAPI = {
+  // Récupérer tous les événements
+  getAll: async () => {
+    return apiClient.get('/events');
   },
-];
-
-// GET tous les événements
-router.get("/", (req, res) => res.json(events));
-
-// POST ajouter un événement
-router.post("/", (req, res) => {
-  events.push(req.body);
-  res.status(201).json(req.body);
-});
-
-// PUT modifier un événement
-router.put("/:id", (req, res) => {
-  const idx = events.findIndex(e => e.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
-  events[idx] = req.body;
-  res.json(events[idx]);
-});
-
-// DELETE supprimer un événement
-router.delete("/:id", (req, res) => {
-  events = events.filter(e => e.id !== req.params.id);
-  res.status(204).end();
-});
-
-module.exports = router;
+  
+  // Récupérer un événement par ID
+  getById: async (id) => {
+    return apiClient.get(`/events/${id}`);
+  },
+  
+  // Créer un nouvel événement
+  create: async (eventData) => {
+    return apiClient.post('/events', eventData);
+  },
+  
+  // Mettre à jour un événement
+  update: async (id, eventData) => {
+    return apiClient.put(`/events/${id}`, eventData);
+  },
+  
+  // Supprimer un événement
+  delete: async (id) => {
+    return apiClient.delete(`/events/${id}`);
+  },
+  
+  // Publier/dépublier un événement
+  publish: async (id, status) => {
+    return apiClient.put(`/events/${id}`, { status });
+  }
+};

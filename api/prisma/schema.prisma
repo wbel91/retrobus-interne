@@ -47,39 +47,29 @@ model Usage {
 
   // Relation vers Vehicle via le champ parc
   vehicle Vehicle @relation("VehicleUsages", fields: [parc], references: [parc])
-
-  // Relation inverse pour les reports (optionnelle)
-  reports Report[] @relation("UsageReports")
 }
 
 model Report {
-  id         Int       @id @default(autoincrement())
-  parc       String
-  usageId    Int?
+  id          Int      @id @default(autoincrement())
+  parc        String
   description String?
-  filesMeta  String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  usageId     Int?
+  filesMeta   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  // Relation vers Vehicle
+  // Relation vers Vehicle via le champ parc
   vehicle Vehicle @relation("VehicleReports", fields: [parc], references: [parc])
-
-  // Relation optionnelle vers Usage
-  usage Usage? @relation("UsageReports", fields: [usageId], references: [id])
-
-  @@index([parc])
-  @@index([usageId])
 }
 
-// Si tu gardes des flashes
 model Flash {
-  id         String   @id
-  message    String
-  category   String
-  active     Boolean  @default(true)
-  expiresAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  message   String
+  category  String   @default("INFO") // INFO, NOTIF, POS
+  active    Boolean  @default(true)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum EventStatus {
@@ -96,9 +86,10 @@ model Event {
   location     String?
   description  String?
   helloAssoUrl String?
-  adultPrice   Int?
-  childPrice   Int?
-  layout       String?     // variante future d’affichage (ex: "hero-poster", "simple")
+  adultPrice   Float?      // Changé de Int à Float pour les centimes
+  childPrice   Float?      // Changé de Int à Float pour les centimes
+  vehicleId    String?     // Ajout du champ véhicule
+  layout       String?     // variante future d'affichage (ex: "hero-poster", "simple")
   extras       String?     // JSON extensible (programme, mentions légales, etc.)
   status       EventStatus @default(PUBLISHED)
   createdAt    DateTime    @default(now())

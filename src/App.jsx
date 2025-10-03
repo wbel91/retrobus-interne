@@ -11,10 +11,10 @@ import MyRBE from "./pages/MyRBE";
 import MyRBEActions from "./pages/MyRBEActions";
 import Vehicules from "./pages/Vehicules";  // PAGE 1: Liste + QR
 import VehiculeShow from "./pages/VehiculeShow";  // PAGE 2: Suivi + Édition
+import Evenements from "./pages/Evenements"; // PAGE: Gestion des événements
 import Adhesion from "./pages/Adhesion";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
-import PrestaEvenements from "./pages/PrestaEvenements";
 import Retromail from "./pages/Retromail";
 
 export default function App() {
@@ -40,9 +40,11 @@ export default function App() {
         <Route path="/dashboard/vehicules" element={<ProtectedRoute><Vehicules /></ProtectedRoute>} />
         <Route path="/dashboard/vehicules/:parc" element={<ProtectedRoute><VehiculeShow /></ProtectedRoute>} />
         
+        {/* ÉVÉNEMENTS: Gestion des événements */}
+        <Route path="/dashboard/evenements" element={<ProtectedRoute><Evenements /></ProtectedRoute>} />
+        
         <Route path="/adhesion" element={<ProtectedRoute><Adhesion /></ProtectedRoute>} />
         <Route path="/mobile/v/:parc" element={<ProtectedRoute><MobileVehicle /></ProtectedRoute>} />
-        <Route path="/presta-evenements" element={<ProtectedRoute><PrestaEvenements /></ProtectedRoute>} />
         <Route path="/retromail" element={<ProtectedRoute><Retromail /></ProtectedRoute>} />
         
         {/* Redirection par défaut vers le dashboard si connecté, sinon vers login */}

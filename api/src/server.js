@@ -111,7 +111,13 @@ const transformEvent = (evt) => {
     description: evt.description,
     helloAssoUrl: evt.helloAssoUrl,
     adultPrice: evt.adultPrice,
-    childPrice: evt.childPrice
+    childPrice: evt.childPrice,
+    vehicleId: evt.vehicleId,        // ← Ajouté
+    status: evt.status,              // ← Ajouté (CRUCIAL pour le bouton)
+    layout: evt.layout,
+    extras: evt.extras,
+    createdAt: evt.createdAt,
+    updatedAt: evt.updatedAt
   };
 };
 
@@ -708,60 +714,60 @@ app.put('/events/:id', requireAuth, async (req, res) => {
         date: b.date ? new Date(b.date) : existing.date,
         time: b.time ?? existing.time,
         location: b.location ?? existing.location,
-        description: b.description ?? existing.description,
-        helloAssoUrl: b.helloAssoUrl ?? existing.helloAssoUrl,
-        adultPrice: b.adultPrice ?? existing.adultPrice,
-        childPrice: b.childPrice ?? existing.childPrice,
-        status: b.status ?? existing.status,
-        layout: b.layout ?? existing.layout,
         extras: b.extras ? JSON.stringify(b.extras) : existing.extras
-      }
-    });
+      } helloAssoUrl: b.helloAssoUrl ?? existing.helloAssoUrl,
+    }); adultPrice: b.adultPrice ?? existing.adultPrice,
+    res.json(transformEvent(updated));isting.childPrice,
+  } catch (e) { b.status ?? existing.status,
+    console.error(e);out ?? existing.layout,
+    res.status(500).json({ error: 'Event update failed' });ing.extras
+  }   }
+}); });
     res.json(transformEvent(updated));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Event update failed' });
-  }
-});
-
 app.delete('/events/:id', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-  try {
+  try {.status(500).json({ error: 'Event update failed' });
     await prisma.event.delete({ where: { id: req.params.id } });
     res.status(204).end();
   } catch (e) {
-    console.error(e);
+    console.error(e);id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Event delete failed' });
-  }
-});
-
+  }ry {
+}); await prisma.event.delete({ where: { id: req.params.id } });
+    res.status(204).end();
 // ---------- Events (public) ----------
 app.get('/public/events', async (_req, res) => {
-  if (!ensureDB(res)) return;
+  if (!ensureDB(res)) return;ror: 'Event delete failed' });
   try {
     const rows = await prisma.event.findMany({
       where: { status: 'PUBLISHED' },
-      orderBy: { date: 'asc' }
-    });
+      orderBy: { date: 'asc' }----------
+    });('/public/events', async (_req, res) => {
     res.json(rows.map(transformEvent));
   } catch (e) {
-    console.error(e);
+    console.error(e);t prisma.event.findMany({
     res.status(500).json({ error: 'Public events fetch failed' });
-  }
-});
-
+  }   orderBy: { date: 'asc' }
+}); });
+    res.json(rows.map(transformEvent));
 app.get('/public/events/:id', async (req, res) => {
   if (!ensureDB(res)) return;
-  try {
+  try {.status(500).json({ error: 'Public events fetch failed' });
     const evt = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!evt || evt.status !== 'PUBLISHED') return res.status(404).json({ error: 'Not found' });
     res.json(transformEvent(evt));
-  } catch (e) {
-    console.error(e);
+  } catch (e) {c/events/:id', async (req, res) => {
+    console.error(e); return;
     res.status(500).json({ error: 'Public event fetch failed' });
-  }
+  } const evt = await prisma.event.findUnique({ where: { id: req.params.id } });
+}); if (!evt || evt.status !== 'PUBLISHED') return res.status(404).json({ error: 'Not found' });
+    res.json(transformEvent(evt));
+// ---------- Server start ----------
+app.listen(PORT, () => {
+  console.log(`🚀 API Server running on http://localhost:${PORT}`);
 });
-
+});
+export default app;
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);

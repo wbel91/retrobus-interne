@@ -20,8 +20,8 @@ const cards = [
     color: "red.100",
   },
   {
-    title: "Presta/Évènements",
-    to: "/presta-evenements",
+    title: "Gestion des Événements",
+    to: "/dashboard/evenements",
     color: "green.100",
   },
   {

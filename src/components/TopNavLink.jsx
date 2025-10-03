@@ -48,9 +48,9 @@ export function Navigation() {
     <Flex bg="white" gap={{ base: 4, md: 8 }} justify="center" align="center" py={3}>
       <TopNavLink to="/dashboard">Accueil</TopNavLink>
       <TopNavLink to="/dashboard/vehicules">Véhicules</TopNavLink>
+      <TopNavLink to="/dashboard/evenements">Événements</TopNavLink>
       <TopNavLink to="/dashboard/myrbe">MyRBE</TopNavLink>
       <TopNavLink to="/dashboard/retromerch">RétroMerch</TopNavLink>
-      <TopNavLink to="/dashboard/events">Events</TopNavLink>
     </Flex>
   );
 }
