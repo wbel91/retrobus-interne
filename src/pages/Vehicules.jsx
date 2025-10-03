@@ -9,7 +9,7 @@ import {
 import { Link as RouterLink } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { FiEdit, FiPlus, FiGrid } from 'react-icons/fi';
-import { vehiculesAPI } from '../api/vehicles.js'; // Import de l'API vehicles
+import { apiClient } from '../api/config.js'; // Import direct du client API
 
 const PUBLIC_BASE = import.meta.env.VITE_PUBLIC_BASE || window.location.origin;
 
@@ -25,7 +25,7 @@ const Vehicules = () => {
   const fetchList = useCallback(async (signal) => {
     try {
       setLoading(true);
-      const vehicles = await vehiculesAPI.getAll();
+      const vehicles = await apiClient.get('/vehicles');
       setData(Array.isArray(vehicles) ? vehicles : []);
     } catch (e) {
       if (e.name !== "AbortError") {

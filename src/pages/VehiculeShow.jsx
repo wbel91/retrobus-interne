@@ -60,7 +60,7 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
     formData.append('image', file);
 
     try {
-      const response = await fetch(`${apiClient.baseURL}/vehicles/${parc}/background`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/vehicles/${parc}/background`, {
         method: 'POST',
         headers: { 'Authorization': authHeader },
         body: formData
@@ -515,7 +515,7 @@ export default function VehiculeShow() {
             vehicle={vehicle}
             parc={parc}
             onChange={updateVehicleInfo}
-            authHeader={apiClient.authHeader}
+            authHeader={`Bearer ${localStorage.getItem('token')}`}
           />
         </Box>
 
@@ -784,9 +784,9 @@ export default function VehiculeShow() {
           <GalleryManager
             value={basicInfo.gallery || []}
             onChange={gallery => setBasicInfo(b => ({ ...b, gallery }))}
-            uploadEndpoint={`${apiClient.baseURL}/vehicles/${parc}/gallery`}
-            deleteEndpoint={`${apiClient.baseURL}/vehicles/${parc}/gallery`}
-            authHeader={apiClient.authHeader}
+            uploadEndpoint={`${import.meta.env.VITE_API_URL}/vehicles/${parc}/gallery`}
+            deleteEndpoint={`${import.meta.env.VITE_API_URL}/vehicles/${parc}/gallery`}
+            authHeader={`Bearer ${localStorage.getItem('token')}`}
           />
           <Text fontSize="sm" color="gray.600" mt={2}>
             La première image peut servir de fond si aucune image de fond spécifique n'est définie. Les autres images apparaissent dans le carrousel.
