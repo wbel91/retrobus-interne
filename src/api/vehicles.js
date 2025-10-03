@@ -10,37 +10,120 @@ let vehicles = [
 export const vehiculesAPI = {
   // Récupérer tous les véhicules
   getAll: async () => {
-    return apiClient.get('/vehicules');
+    return apiClient.get('/vehicles');
   },
   
-  // Récupérer un véhicule par ID
-  getById: async (id) => {
-    return apiClient.get(`/vehicules/${id}`);
+  // Récupérer un véhicule par parc (l'API utilise parc, pas id)
+  getByParc: async (parc) => {
+    return apiClient.get(`/vehicles/${parc}`);
   },
   
   // Créer un nouveau véhicule
   create: async (vehiculeData) => {
-    return apiClient.post('/vehicules', vehiculeData);
+    return apiClient.post('/vehicles', vehiculeData);
   },
   
   // Mettre à jour un véhicule
-  update: async (id, vehiculeData) => {
-    return apiClient.put(`/vehicules/${id}`, vehiculeData);
+  update: async (parc, vehiculeData) => {
+    return apiClient.put(`/vehicles/${parc}`, vehiculeData);
   },
   
   // Supprimer un véhicule
-  delete: async (id) => {
-    return apiClient.delete(`/vehicules/${id}`);
+  delete: async (parc) => {
+    return apiClient.delete(`/vehicles/${parc}`);
   },
   
-  // Rechercher des véhicules
-  search: async (query) => {
-    return apiClient.get(`/vehicules/search?q=${encodeURIComponent(query)}`);
+  // Upload galerie
+  uploadGallery: async (parc, files) => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('images', file));
+    
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/vehicles/${parc}/gallery`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+    
+    return response.json();
   },
   
-  // Récupérer les véhicules par parc
-  getByParc: async (parc) => {
-    return apiClient.get(`/vehicules/parc/${parc}`);
+  // Upload background
+  uploadBackground: async (parc, file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/vehicles/${parc}/background`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+    
+    return response.json();
+  },
+  
+  // Générer QR Code
+  generateQR: async (parc) => {
+    return apiClient.get(`/vehicles/${parc}/qr`);
+  },
+  
+  // Gestion des utilisations
+  getUsages: async (parc) => {
+    return apiClient.get(`/vehicles/${parc}/usages`);
+  },
+  
+  createUsage: async (parc, usageData) => {
+    return apiClient.post(`/vehicles/${parc}/usages`, usageData);
+  },
+  
+  updateUsage: async (id, usageData) => {
+    return apiClient.put(`/usages/${id}`, usageData);
+  },
+  
+  deleteUsage: async (id) => {
+    return apiClient.delete(`/usages/${id}`);
+  },
+  
+  // Gestion des rapports
+  getReports: async (parc) => {
+    return apiClient.get(`/vehicles/${parc}/reports`);
+  },
+  
+  createReport: async (parc, reportData) => {
+    return apiClient.post(`/vehicles/${parc}/reports`, reportData);
+  },
+  
+  updateReport: async (id, reportData) => {
+    return apiClient.put(`/reports/${id}`, reportData);
+  },
+  
+  deleteReport: async (id) => {
+    return apiClient.delete(`/reports/${id}`);
   }
 };
 
