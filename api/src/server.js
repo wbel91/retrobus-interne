@@ -6,6 +6,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import QRCode from 'qrcode';
+import { Helmet } from "react-helmet-async";
+import { Box, Container, Heading, Text, VStack, Button, Badge, HStack, Spinner } from "@chakra-ui/react";
+import { Link as RouterLink } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -63,13 +67,21 @@ const stringifyJsonField = (field) => {
   }
 };
 
+const API_BASE = process.env.PUBLIC_API_BASE || ''; // ou `https://${process.env.RAILWAY_STATIC_URL}` si fourni
+
+function absolutize(path) {
+  if (!path) return path;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (!API_BASE) return path; // fallback relatif
+  return `${API_BASE}${path}`;
+}
+
 // Transform vehicle data for API responses
 const transformVehicle = (vehicle) => {
   if (!vehicle) return null;
-  let caract = {};
-  if (vehicle.caracteristiques) {
-    try { caract = JSON.parse(vehicle.caracteristiques); } catch {}
-  }
+  let caract = [];
+  try { caract = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : []; } catch {}
+  const gallery = parseJsonField(vehicle.gallery) || [];
   return {
     id: vehicle.id,
     parc: vehicle.parc,
@@ -82,13 +94,27 @@ const transformVehicle = (vehicle) => {
     miseEnCirculation: vehicle.miseEnCirculation,
     energie: vehicle.energie,
     description: vehicle.description,
-    histoire: vehicle.history, // Alias pour le front
-    backgroundImage: vehicle.backgroundImage,
+    history: vehicle.history, // conserver la clé exacte attendue côté externe
+    backgroundImage: absolutize(vehicle.backgroundImage),
     backgroundPosition: vehicle.backgroundPosition,
-    gallery: parseJsonField(vehicle.gallery),
-    caracteristiques: caract, // pour debug ou réutilisation
-    // Déballer les champs utiles directement
-    ...caract
+    gallery: gallery.map(absolutize),
+    caracteristiques: caract
+  };
+};
+
+const transformEvent = (evt) => {
+  if (!evt) return null;
+  return {
+    id: evt.id,
+    title: evt.title,
+    date: evt.date,
+    time: evt.time,
+    location: evt.location,
+    description: evt.description,
+    helloAssoUrl: evt.helloAssoUrl,
+    adultPrice: evt.adultPrice,
+    childPrice: evt.childPrice,
+    // champs futurs (layout, extras) non exposés pour ne pas casser l’externe tant qu’il ne les consomme pas
   };
 };
 
@@ -581,3 +607,123 @@ app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
 });
 export default app;
+
+export default function Events() {
+  const [events, setEvents] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const base = import.meta.env.VITE_API_URL;
+        if (!base) throw new Error("API non configurée");
+        const res = await fetch(`${base}/public/events`);
+        if (!res.ok) throw new Error("Fetch événements échoué");
+        const data = await res.json();
+        // Adapter format date => composant actuel attend AAAA-MM-JJ (on garde tel quel,
+        // l’API renvoie ISO donc on slice)
+        const normalized = data.map(e => ({
+          ...e,
+          date: (typeof e.date === 'string') ? e.date.substring(0,10) : e.date
+        }));
+        setEvents(normalized);
+      } catch (e) {
+        console.warn("Fallback événements (raison:", e.message, ")");
+        setError(e.message);
+        setEvents(fallbackEvents);
+      }
+    };
+    load();
+  }, []);
+
+  return (
+    <>
+      <Helmet>
+        <title>Événements - Association RétroBus Essonne</title>
+        <meta name="description" content="Découvrez les prochains événements, sorties et expositions de l'association RétroBus Essonne." />
+      </Helmet>
+
+      <Container maxW="container.lg" py={10}>
+        <VStack spacing={4} mb={12} textAlign="center">
+          <Heading as="h1" size="2xl">
+            Nos Événements
+          </Heading>
+          <Text fontSize="lg" color="gray.600">
+            L'agenda de nos prochaines sorties et manifestations.
+          </Text>
+        </VStack>
+
+        {events === null ? (
+          <VStack py={16}><Spinner size="xl" /></VStack>
+        ) : events.length === 0 ? (
+          <Box p={8} textAlign="center" bg="gray.50" borderRadius="lg">
+            <Text fontSize="lg" color="gray.600">
+              Aucun événement programmé pour le moment.
+            </Text>
+            <Text fontSize="md" color="gray.500" mt={2}>
+              Revenez bientôt pour découvrir nos prochaines sorties !
+            </Text>
+          </Box>
+        ) : (
+          <VStack spacing={10} align="stretch">
+            {events.map(event => (
+              <Box key={event.id} p={8} bg="orange.50" borderRadius="lg" boxShadow="md">
+                <Heading as="h2" size="lg" color="orange.700" mb={2}>
+                  {event.title}
+                </Heading>
+                <HStack spacing={4} mb={2}>
+                  <Badge colorScheme="orange">{event.date}</Badge>
+                  {event.time && <Badge colorScheme="blue">{event.time}</Badge>}
+                </HStack>
+                {event.location && (
+                  <Text fontSize="md" color="gray.700" mb={2}>
+                    📍 {event.location}
+                  </Text>
+                )}
+                {event.description && (
+                  <Text fontSize="sm" color="gray.600" mb={4}>
+                    {event.description}
+                  </Text>
+                )}
+                <HStack spacing={8} mb={4}>
+                  {event.adultPrice !== undefined && event.adultPrice !== null && (
+                    <Text fontWeight="bold" color="green.700">
+                      Adulte : {event.adultPrice}€
+                    </Text>
+                  )}
+                  {event.childPrice !== undefined && event.childPrice !== null && (
+                    <Text fontWeight="bold" color="green.700">
+                      Enfant (-12 ans) : {event.childPrice}€
+                    </Text>
+                  )}
+                </HStack>
+                <Button
+                  as={RouterLink}
+                  to={`/evenement/${event.id}/inscription?title=${encodeURIComponent(event.title)}&date=${event.date}&time=${event.time || ''}&location=${encodeURIComponent(event.location || '')}&adultPrice=${event.adultPrice ?? ''}&childPrice=${event.childPrice ?? ''}`}
+                  colorScheme="orange"
+                  size="lg"
+                >
+                  S'inscrire
+                </Button>
+              </Box>
+            ))}
+          </VStack>
+        )}
+      </Container>
+    </>
+  );
+}
+
+// Fallback local (garde la mise en forme si API KO)
+const fallbackEvents = [
+  {
+    id: "halloween2025",
+    title: "RétroWouh ! Halloween",
+    date: "2025-10-31",
+    time: "20:00",
+    location: "Salle des Fêtes de Villebon",
+    adultPrice: 15,
+    childPrice: 8,
+    description: "Soirée spéciale Halloween avec animations, musique et surprises !",
+  },
+];

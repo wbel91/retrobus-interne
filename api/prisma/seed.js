@@ -42,6 +42,30 @@ async function main() {
   });
 
   console.log('Seed OK: véhicule 920 créé.');
+
+  await prisma.event.upsert({
+    where: { id: 'halloween2025' },
+    update: {},
+    create: {
+      id: 'halloween2025',
+      title: 'RétroWouh ! Halloween',
+      date: new Date('2025-10-31T00:00:00Z'),
+      time: '20:00',
+      location: 'Salle des Fêtes de Villebon',
+      description: 'Soirée spéciale Halloween avec animations, musique et surprises !',
+      helloAssoUrl: 'https://www.helloasso.com/associations/rbe/evenements/halloween2025',
+      adultPrice: 15,
+      childPrice: 8,
+      status: 'PUBLISHED',
+      layout: 'default',
+      extras: JSON.stringify({
+        theme: 'Halloween',
+        note: 'Costumes bienvenus'
+      })
+    }
+  });
+
+  console.log('✅ Seed event halloween2025 OK');
 }
 
 main()

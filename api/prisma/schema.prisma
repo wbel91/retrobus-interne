@@ -81,3 +81,28 @@ model Flash {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Event {
+  id           String      @id           // slug lisible: halloween2025
+  title        String
+  date         DateTime
+  time         String?
+  location     String?
+  description  String?
+  helloAssoUrl String?
+  adultPrice   Int?
+  childPrice   Int?
+  layout       String?     // variante future d’affichage (ex: "hero-poster", "simple")
+  extras       String?     // JSON extensible (programme, mentions légales, etc.)
+  status       EventStatus @default(PUBLISHED)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([date])
+}
