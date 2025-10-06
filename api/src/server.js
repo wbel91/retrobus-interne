@@ -17,7 +17,7 @@ app.use(express.json());
 app.use(cors({
   origin: (origin, cb) => {
     const allowed = [
-      'http://localhost:5173',
+      'http://localhost:5173',     // ✅ Déjà présent
       'http://localhost:4173',
       'http://localhost:3000',
       'http://localhost:5174',
@@ -26,9 +26,10 @@ app.use(cors({
       'https://retrobus-interne.fr',
       'https://www.retrobus-interne.fr',
       'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
-      'https://retrobus-essonne.fr',          // ← AJOUTE
-      'https://www.retrobus-essonne.fr'       // ← AJOUTE
+      'https://retrobus-essonne.fr',
+      'https://www.retrobus-essonne.fr'
     ];
+    console.log('🌍 CORS origin:', origin); // DEBUG
     if (!origin || allowed.includes(origin)) return cb(null, true);
     return cb(new Error('Origin not allowed'));
   },
