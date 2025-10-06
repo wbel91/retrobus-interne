@@ -29,6 +29,11 @@ const cards = [
     to: "/adhesion",
     color: "blue.100",
   },
+  {
+    title: "Gestion Newsletter",
+    to: "/dashboard/newsletter",
+    color: "purple.100",
+  },
 ];
 
 export default function MyRBE() {

@@ -97,3 +97,11 @@ model Event {
 
   @@index([date])
 }
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  status    String   @default("CONFIRMED") // CONFIRMED | PENDING | UNSUB
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

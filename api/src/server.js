@@ -677,6 +677,7 @@ app.post('/events', requireAuth, async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.id) return res.status(400).json({ error: 'id requis (slug)' });
+
     const created = await prisma.event.create({
       data: {
         id: b.id,
@@ -688,6 +689,7 @@ app.post('/events', requireAuth, async (req, res) => {
         helloAssoUrl: b.helloAssoUrl || null,
         adultPrice: b.adultPrice ?? null,
         childPrice: b.childPrice ?? null,
+        vehicleId: b.vehicleId || null,
         status: b.status || 'DRAFT',
         layout: b.layout || null,
         extras: b.extras ? JSON.stringify(b.extras) : null
@@ -707,6 +709,7 @@ app.put('/events/:id', requireAuth, async (req, res) => {
     const existing = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const b = req.body || {};
+
     const updated = await prisma.event.update({
       where: { id: req.params.id },
       data: {
@@ -714,60 +717,136 @@ app.put('/events/:id', requireAuth, async (req, res) => {
         date: b.date ? new Date(b.date) : existing.date,
         time: b.time ?? existing.time,
         location: b.location ?? existing.location,
+        description: b.description ?? existing.description,
+        helloAssoUrl: b.helloAssoUrl ?? existing.helloAssoUrl,
+        adultPrice: b.adultPrice ?? existing.adultPrice,
+        childPrice: b.childPrice ?? existing.childPrice,
+        vehicleId: b.vehicleId ?? existing.vehicleId,
+        status: b.status ?? existing.status,
+        layout: b.layout ?? existing.layout,
         extras: b.extras ? JSON.stringify(b.extras) : existing.extras
-      } helloAssoUrl: b.helloAssoUrl ?? existing.helloAssoUrl,
-    }); adultPrice: b.adultPrice ?? existing.adultPrice,
-    res.json(transformEvent(updated));isting.childPrice,
-  } catch (e) { b.status ?? existing.status,
-    console.error(e);out ?? existing.layout,
-    res.status(500).json({ error: 'Event update failed' });ing.extras
-  }   }
-}); });
+      }
+    });
     res.json(transformEvent(updated));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Event update failed' });
+  }
+});
+
 app.delete('/events/:id', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-  try {.status(500).json({ error: 'Event update failed' });
+  try {
     await prisma.event.delete({ where: { id: req.params.id } });
     res.status(204).end();
   } catch (e) {
-    console.error(e);id', requireAuth, async (req, res) => {
+    console.error(e);
     res.status(500).json({ error: 'Event delete failed' });
-  }ry {
-}); await prisma.event.delete({ where: { id: req.params.id } });
-    res.status(204).end();
+  }
+});
+
 // ---------- Events (public) ----------
 app.get('/public/events', async (_req, res) => {
-  if (!ensureDB(res)) return;ror: 'Event delete failed' });
+  if (!ensureDB(res)) return;
   try {
     const rows = await prisma.event.findMany({
       where: { status: 'PUBLISHED' },
-      orderBy: { date: 'asc' }----------
-    });('/public/events', async (_req, res) => {
+      orderBy: { date: 'asc' }
+    });
     res.json(rows.map(transformEvent));
   } catch (e) {
-    console.error(e);t prisma.event.findMany({
+    console.error(e);
     res.status(500).json({ error: 'Public events fetch failed' });
-  }   orderBy: { date: 'asc' }
-}); });
-    res.json(rows.map(transformEvent));
+  }
+});
+
 app.get('/public/events/:id', async (req, res) => {
   if (!ensureDB(res)) return;
-  try {.status(500).json({ error: 'Public events fetch failed' });
+  try {
     const evt = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!evt || evt.status !== 'PUBLISHED') return res.status(404).json({ error: 'Not found' });
     res.json(transformEvent(evt));
-  } catch (e) {c/events/:id', async (req, res) => {
-    console.error(e); return;
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'Public event fetch failed' });
-  } const evt = await prisma.event.findUnique({ where: { id: req.params.id } });
-}); if (!evt || evt.status !== 'PUBLISHED') return res.status(404).json({ error: 'Not found' });
-    res.json(transformEvent(evt));
-// ---------- Server start ----------
-app.listen(PORT, () => {
-  console.log(`🚀 API Server running on http://localhost:${PORT}`);
+  }
 });
+
+// ---------- Newsletter (Prisma) ----------
+const transformSubscriber = (s) => ({
+  id: s.id,
+  email: s.email,
+  status: s.status,
+  createdAt: s.createdAt,
+  updatedAt: s.updatedAt
 });
-export default app;
+
+// Liste complète (interne, protégée)
+app.get('/newsletter', requireAuth, async (_req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const rows = await prisma.newsletterSubscriber.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(rows.map(transformSubscriber));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Fetch failed' });
+  }
+});
+
+// Inscription publique (externe)
+app.post('/newsletter/subscribe', async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { email } = req.body || {};
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email invalide' });
+    }
+    const existing = await prisma.newsletterSubscriber.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+    if (existing) {
+      return res.json({ ok: true, duplicated: true, subscriber: transformSubscriber(existing) });
+    }
+    const created = await prisma.newsletterSubscriber.create({
+      data: { email: email.toLowerCase(), status: 'CONFIRMED' }
+    });
+    res.json({ ok: true, subscriber: transformSubscriber(created) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Subscribe failed' });
+  }
+});
+
+// Ajout manuel interne
+app.post('/newsletter', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { email, status } = req.body || {};
+    if (!email || !email.includes('@')) return res.status(400).json({ error: 'Email invalide' });
+    const created = await prisma.newsletterSubscriber.create({
+      data: { email: email.toLowerCase(), status: status || 'CONFIRMED' }
+    });
+    res.json(transformSubscriber(created));
+  } catch (e) {
+    if (e.code === 'P2002') return res.status(409).json({ error: 'Existe déjà' });
+    console.error(e);
+    res.status(500).json({ error: 'Create failed' });
+  }
+});
+
+app.delete('/newsletter/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    await prisma.newsletterSubscriber.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
