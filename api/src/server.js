@@ -25,7 +25,9 @@ app.use(cors({
       'https://association-rbe.fr',
       'https://retrobus-interne.fr',
       'https://www.retrobus-interne.fr',
-      'https://refreshing-adaptation-rbe-serveurs.up.railway.app'
+      'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
+      'https://retrobus-essonne.fr',          // ← AJOUTE
+      'https://www.retrobus-essonne.fr'       // ← AJOUTE
     ];
     if (!origin || allowed.includes(origin)) return cb(null, true);
     return cb(new Error('Origin not allowed'));
