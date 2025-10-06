@@ -850,6 +850,7 @@ app.delete('/newsletter/:id', requireAuth, async (req, res) => {
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
+  console.log('Boot API (newsletter debug) build=', new Date().toISOString());
 });
 
 export default app;
