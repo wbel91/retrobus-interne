@@ -5,19 +5,137 @@ import {
   VStack, useDisclosure, Modal, ModalOverlay, ModalContent,
   ModalHeader, ModalCloseButton, ModalBody, FormControl, FormLabel,
   Input, Textarea, Select, ModalFooter, Table, Thead, Tbody, Tr, Th, Td,
-  Tabs, TabList, TabPanels, Tab, TabPanel, Alert, AlertIcon
+  Tabs, TabList, TabPanels, Tab, TabPanel, Alert, AlertIcon,
+  Switch, Divider, ButtonGroup, Icon, Tooltip, RadioGroup, Radio, Stack
 } from "@chakra-ui/react";
 import { Link as RouterLink } from "react-router-dom";
-import { FiEdit, FiPlus, FiEye, FiTrash2, FiCalendar, FiGrid, FiList } from 'react-icons/fi';
+import { 
+  FiEdit, FiPlus, FiEye, FiTrash2, FiCalendar, FiGrid, FiList, 
+  FiUsers, FiLock, FiGlobe, FiDollarSign, FiGift, FiClock, FiMapPin,
+  FiDownload, FiExternalLink, FiEyeOff
+} from 'react-icons/fi';
 import { eventsAPI } from '../api/events.js';
 import { vehiculesAPI } from '../api/vehicles.js';
+
+// Templates d'événements prédéfinis (corrigés)
+const EVENT_TEMPLATES = {
+  public_open_access: {
+    name: "Ouvert au Public",
+    icon: FiGlobe,
+    color: "green",
+    defaults: {
+      isVisible: true,
+      allowPublicRegistration: false,
+      requiresRegistration: false,  // ← PAS d'inscription requise
+      isFree: true,
+      adultPrice: null,
+      childPrice: null,
+      maxParticipants: null,
+      registrationDeadline: '',
+      registrationMethod: 'none',
+      status: 'PUBLISHED'
+    },
+    description: "Événement ouvert au public, accès libre sans inscription"
+  },
+  public_with_registration: {
+    name: "Public avec Inscription",
+    icon: FiUsers,
+    color: "blue",
+    defaults: {
+      isVisible: true,
+      allowPublicRegistration: true,   // ← Le public PEUT s'inscrire
+      requiresRegistration: true,      // ← Inscription REQUISE
+      isFree: false,
+      adultPrice: 15,
+      childPrice: 8,
+      maxParticipants: 100,
+      registrationDeadline: '',
+      registrationMethod: 'internal',
+      status: 'PUBLISHED'
+    },
+    description: "Événement public avec inscription ouverte directement au public"
+  },
+  public_contact_required: {
+    name: "Contact Association Requis",
+    icon: FiEyeOff,
+    color: "orange",
+    defaults: {
+      isVisible: true,
+      allowPublicRegistration: false,  // ← Le public NE PEUT PAS s'inscrire
+      requiresRegistration: true,      // ← Mais inscription REQUISE
+      isFree: false,
+      adultPrice: 12,
+      childPrice: 6,
+      maxParticipants: 30,
+      registrationDeadline: '',
+      registrationMethod: 'none',
+      status: 'PUBLISHED'
+    },
+    description: "Visible par tous mais inscription uniquement en contactant l'association"
+  },
+  members_only: {
+    name: "Adhérents Seulement",
+    icon: FiLock,
+    color: "purple",
+    defaults: {
+      isVisible: false,             // ← Pas visible publiquement
+      allowPublicRegistration: false,
+      requiresRegistration: true,
+      isFree: true,
+      adultPrice: null,
+      childPrice: null,
+      maxParticipants: 50,
+      registrationDeadline: '',
+      registrationMethod: 'internal',
+      status: 'PUBLISHED'
+    },
+    description: "Réservé aux adhérents, non visible sur le site public"
+  },
+  private_internal: {
+    name: "Événement Interne",
+    icon: FiLock,
+    color: "red",
+    defaults: {
+      isVisible: false,             // ← Pas visible publiquement
+      allowPublicRegistration: false,
+      requiresRegistration: false,  // ← Pas d'inscription du tout
+      isFree: true,
+      adultPrice: null,
+      childPrice: null,
+      maxParticipants: null,
+      registrationDeadline: '',
+      registrationMethod: 'none',
+      status: 'DRAFT'
+    },
+    description: "Événement interne, complètement privé"
+  },
+  public_pdf_form: {
+    name: "Formulaire PDF Public",
+    icon: FiDownload,
+    color: "teal",
+    defaults: {
+      isVisible: true,
+      allowPublicRegistration: true,   // ← Le public PEUT télécharger le PDF
+      requiresRegistration: true,      // ← Inscription REQUISE
+      isFree: false,
+      adultPrice: 12,
+      childPrice: 6,
+      maxParticipants: null,
+      registrationDeadline: '',
+      registrationMethod: 'pdf',
+      status: 'PUBLISHED'
+    },
+    description: "Événement public avec formulaire PDF à télécharger"
+  }
+};
 
 const Evenements = () => {
   const [events, setEvents] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [viewMode, setViewMode] = useState('cards'); // 'cards' ou 'table'
+  const [viewMode, setViewMode] = useState('cards');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [editingEvent, setEditingEvent] = useState(null);
@@ -32,38 +150,180 @@ const Evenements = () => {
     childPrice: '',
     helloAssoUrl: '',
     vehicleId: '',
-    status: 'DRAFT'
+    status: 'DRAFT',
+    // Champs corrigés pour la nouvelle logique
+    isVisible: true,              // Visible sur le site public
+    allowPublicRegistration: false, // Le public peut s'inscrire
+    requiresRegistration: false,   // Inscription requise
+    isFree: true,
+    maxParticipants: '',
+    registrationDeadline: '',
+    registrationMethod: 'none',    // 'none', 'helloasso', 'pdf', 'internal'
+    pdfUrl: '',                    // URL du PDF à télécharger
+    eventType: 'public_info_only'
   });
 
-  // Ajouter un fallback temporaire au début de fetchEvents:
+  // Test API pour diagnostiquer l'erreur 400
+  const testAPIConnection = async () => {
+    const token = localStorage.getItem('token');
+    console.log('🔍 Testing API connection...');
+    console.log('Token exists:', !!token);
+    
+    if (!token) {
+      toast({ status: "error", title: "Pas de token", description: "Veuillez vous reconnecter" });
+      return;
+    }
+
+    try {
+      // Test 1: GET events
+      const testResponse = await fetch('https://refreshing-adaptation-rbe-serveurs.up.railway.app/events', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      console.log('GET /events status:', testResponse.status);
+      
+      if (testResponse.ok) {
+        const data = await testResponse.json();
+        console.log('✅ GET API works, events:', data.length);
+        setEvents(Array.isArray(data) ? data : []);
+        
+        // Test 2: POST test event pour voir l'erreur exacte
+        console.log('🧪 Testing POST with minimal data...');
+        const testEventData = {
+          id: `test-${Date.now()}`,
+          title: 'Test Event',
+          date: '2025-12-31',
+          status: 'DRAFT'
+        };
+        
+        const postResponse = await fetch('https://refreshing-adaptation-rbe-serveurs.up.railway.app/events', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(testEventData)
+        });
+        
+        console.log('POST /events status:', postResponse.status);
+        
+        if (postResponse.ok) {
+          const createdEvent = await postResponse.json();
+          console.log('✅ POST works, created:', createdEvent);
+          
+          // Nettoyer le test en supprimant l'événement créé
+          await fetch(`https://refreshing-adaptation-rbe-serveurs.up.railway.app/events/${testEventData.id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          toast({ 
+            status: "success", 
+            title: "API entièrement fonctionnelle", 
+            description: "GET et POST fonctionnent correctement"
+          });
+        } else {
+          const errorText = await postResponse.text();
+          console.log('❌ POST error:', postResponse.status, errorText);
+          
+          toast({ 
+            status: "error", 
+            title: `Erreur POST ${postResponse.status}`, 
+            description: errorText
+          });
+        }
+      } else {
+        const errorText = await testResponse.text();
+        console.log('❌ GET error:', testResponse.status, errorText);
+        
+        toast({ 
+          status: "error", 
+          title: `Erreur GET ${testResponse.status}`, 
+          description: errorText
+        });
+      }
+    } catch (error) {
+      console.error('Network error:', error);
+      toast({ 
+        status: "error", 
+        title: "Erreur réseau", 
+        description: error.message
+      });
+    }
+  };
+
   const fetchEvents = useCallback(async () => {
     try {
       setLoading(true);
+      
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({ 
+          status: "warning", 
+          title: "Session expirée",
+          description: "Veuillez vous reconnecter."
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      // Vérification de la validité du token
+      try {
+        const tokenParts = token.split('.');
+        if (tokenParts.length !== 3) {
+          throw new Error('Format de token invalide');
+        }
+        
+        const payload = JSON.parse(atob(tokenParts[1]));
+        const currentTime = Math.floor(Date.now() / 1000);
+        
+        if (payload.exp && payload.exp < currentTime) {
+          throw new Error('Token expiré');
+        }
+      } catch (tokenError) {
+        console.error('Token invalide:', tokenError);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        toast({ 
+          status: "error", 
+          title: "Session invalide",
+          description: "Veuillez vous reconnecter."
+        });
+        window.location.href = '/login';
+        return;
+      }
+      
       const data = await eventsAPI.getAll();
       setEvents(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Erreur events API:', e);
-      // Fallback temporaire
-      setEvents([
-        {
-          id: 'halloween2025',
-          title: 'RétroWouh ! Halloween',
-          date: '2025-10-31',
-          time: '20:00',
-          location: 'Salle des Fêtes de Villebon',
-          description: 'Soirée spéciale Halloween avec animations, musique et surprises !',
-          adultPrice: 15,
-          childPrice: 8,
-          helloAssoUrl: 'https://www.helloasso.com/associations/rbe/evenements/halloween2025',
-          vehicleId: '920',
-          status: 'PUBLISHED'
-        }
-      ]);
-      toast({ 
-        status: "warning", 
-        title: "Mode hors ligne",
-        description: "Utilisation des données de test (API indisponible)"
-      });
+      
+      if (e.message.includes('401')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return;
+      }
+      
+      if (e.message.includes('400')) {
+        toast({ 
+          status: "error", 
+          title: "Erreur 400 - Bad Request",
+          description: "Problème avec la requête. Cliquez sur 'Tester API' pour diagnostiquer."
+        });
+      } else {
+        toast({ 
+          status: "error", 
+          title: "Erreur de chargement",
+          description: "Impossible de charger les événements."
+        });
+      }
+      
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -84,8 +344,7 @@ const Evenements = () => {
     fetchVehicles();
   }, [fetchEvents, fetchVehicles]);
 
-  const handleCreate = () => {
-    setEditingEvent(null);
+  const resetForm = () => {
     setFormData({
       title: '',
       date: '',
@@ -96,13 +355,63 @@ const Evenements = () => {
       childPrice: '',
       helloAssoUrl: '',
       vehicleId: '',
-      status: 'DRAFT'
+      status: 'DRAFT',
+      isVisible: true,
+      allowPublicRegistration: false,
+      requiresRegistration: false,
+      isFree: true,
+      maxParticipants: '',
+      registrationDeadline: '',
+      registrationMethod: 'none',
+      pdfUrl: '',
+      eventType: 'public_info_only'
     });
+    setSelectedTemplate('');
+  };
+
+  const applyTemplate = (templateKey) => {
+    const template = EVENT_TEMPLATES[templateKey];
+    if (!template) return;
+
+    setFormData(prev => ({
+      ...prev,
+      ...template.defaults,
+      eventType: templateKey,
+      // Conserver les champs déjà remplis
+      title: prev.title,
+      date: prev.date,
+      time: prev.time,
+      location: prev.location,
+      description: prev.description,
+      vehicleId: prev.vehicleId
+    }));
+    
+    setSelectedTemplate(templateKey);
+    
+    toast({
+      status: "info",
+      title: "Template appliqué",
+      description: template.description
+    });
+  };
+
+  const handleCreate = () => {
+    setEditingEvent(null);
+    resetForm();
     onOpen();
   };
 
   const handleEdit = (event) => {
     setEditingEvent(event);
+    
+    // Parser les extras pour récupérer la configuration
+    let extras = {};
+    try {
+      extras = event.extras ? JSON.parse(event.extras) : {};
+    } catch (e) {
+      console.log('Impossible de parser extras:', e);
+    }
+
     setFormData({
       title: event.title || '',
       date: event.date || '',
@@ -113,9 +422,36 @@ const Evenements = () => {
       childPrice: event.childPrice || '',
       helloAssoUrl: event.helloAssoUrl || '',
       vehicleId: event.vehicleId || '',
-      status: event.status || 'DRAFT'
+      status: event.status || 'DRAFT',
+      isVisible: extras.isVisible !== false,
+      allowPublicRegistration: extras.allowPublicRegistration || false,
+      requiresRegistration: extras.requiresRegistration || !!event.helloAssoUrl,
+      isFree: extras.isFree !== false,
+      maxParticipants: extras.maxParticipants || '',
+      registrationDeadline: extras.registrationDeadline || '',
+      registrationMethod: extras.registrationMethod || (event.helloAssoUrl ? 'helloasso' : 'none'),
+      pdfUrl: extras.pdfUrl || '',
+      eventType: extras.eventType || 'public_info_only'
     });
+    setSelectedTemplate(extras.eventType || '');
     onOpen();
+  };
+
+  const generateEventSlug = (title, date) => {
+    // Créer un slug unique à partir du titre et de la date
+    const titleSlug = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Enlever les accents
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .substring(0, 30); // Limiter la longueur
+    
+    const dateSlug = date.replace(/-/g, '');
+    const randomSuffix = Math.random().toString(36).substring(2, 6); // Ajouter un suffixe aléatoire
+    
+    return `${titleSlug}-${dateSlug}-${randomSuffix}`;
   };
 
   const handleSave = async () => {
@@ -124,20 +460,45 @@ const Evenements = () => {
       return;
     }
 
+    if (!formData.date) {
+      toast({ status: "warning", title: "La date est requise" });
+      return;
+    }
+
     try {
       setSaving(true);
+      
       const eventData = {
         title: formData.title.trim(),
         date: formData.date,
-        time: formData.time,
-        location: formData.location.trim(),
-        description: formData.description.trim(),
+        time: formData.time || null,
+        location: formData.location.trim() || null,
+        description: formData.description.trim() || null,
         adultPrice: formData.adultPrice ? parseFloat(formData.adultPrice) : null,
         childPrice: formData.childPrice ? parseFloat(formData.childPrice) : null,
-        helloAssoUrl: formData.helloAssoUrl.trim(),
+        helloAssoUrl: formData.helloAssoUrl.trim() || null,
         vehicleId: formData.vehicleId || null,
-        status: formData.status
+        status: formData.status,
+        extras: {
+          isVisible: formData.isVisible,
+          allowPublicRegistration: formData.allowPublicRegistration,
+          requiresRegistration: formData.requiresRegistration,
+          isFree: formData.isFree,
+          maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : null,
+          registrationDeadline: formData.registrationDeadline || null,
+          registrationMethod: formData.registrationMethod,
+          pdfUrl: formData.pdfUrl || null,
+          eventType: formData.eventType
+        }
       };
+
+      // Pour la création, ajouter l'ID obligatoire
+      if (!editingEvent) {
+        eventData.id = generateEventSlug(formData.title, formData.date);
+        console.log('🆔 Generated ID:', eventData.id);
+      }
+
+      console.log('🚀 Saving event data:', eventData);
 
       if (editingEvent) {
         await eventsAPI.update(editingEvent.id, eventData);
@@ -149,12 +510,32 @@ const Evenements = () => {
 
       await fetchEvents();
       onClose();
+      resetForm();
     } catch (e) {
-      toast({ 
-        status: "error", 
-        title: "Erreur lors de la sauvegarde",
-        description: e.message
-      });
+      console.error('Save error:', e);
+      
+      // Gestion spécifique des erreurs avec plus de détails
+      if (e.message.includes('409') || (e.message.includes('ID déjà utilisé'))) {
+        toast({ 
+          status: "error", 
+          title: "ID déjà utilisé",
+          description: "Un événement avec ce nom et cette date existe déjà. Modifiez le titre ou la date."
+        });
+      } else if (e.message.includes('400')) {
+        // Essayer de récupérer plus d'informations sur l'erreur 400
+        console.log('Détails erreur 400 - Data envoyée:', eventData);
+        toast({ 
+          status: "error", 
+          title: "Erreur 400 - Données invalides",
+          description: "Vérifiez la console pour voir les données envoyées."
+        });
+      } else {
+        toast({ 
+          status: "error", 
+          title: "Erreur lors de la sauvegarde",
+          description: e.message
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -181,7 +562,7 @@ const Evenements = () => {
   const togglePublish = async (event) => {
     const newStatus = event.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
     try {
-      // Utiliser update au lieu de publish pour plus de clarté
+      console.log('🔄 Toggling status from', event.status, 'to', newStatus);
       await eventsAPI.update(event.id, { status: newStatus });
       toast({ 
         status: "success", 
@@ -204,6 +585,111 @@ const Evenements = () => {
       : <Badge colorScheme="gray">Brouillon</Badge>;
   };
 
+  const getEventTypeBadge = (event) => {
+    try {
+      const extras = event.extras ? JSON.parse(event.extras) : {};
+      const eventType = extras.eventType || 'public_info_only';
+      const template = EVENT_TEMPLATES[eventType];
+      
+      if (template) {
+        return (
+          <Badge colorScheme={template.color} variant="subtle">
+            <Icon as={template.icon} mr={1} />
+            {template.name}
+          </Badge>
+        );
+      }
+    } catch (e) {
+      console.log('Error parsing event extras:', e);
+    }
+    
+    return <Badge colorScheme="gray">Standard</Badge>;
+  };
+
+  const getRegistrationButton = (event) => {
+    try {
+      const extras = event.extras ? JSON.parse(event.extras) : {};
+      
+      console.log(`🔍 Internal - Event "${event.title}" extras:`, extras);
+      
+      // Logique simple et claire
+      
+      // 1. Événement non visible publiquement
+      if (!extras.isVisible) {
+        return (
+          <Button
+            size="sm"
+            leftIcon={<FiLock />}
+            colorScheme="red"
+            variant="solid"
+            isDisabled
+          >
+            Privé/Interne
+          </Button>
+        );
+      }
+      
+      // 2. Visible mais pas d'inscription requise
+      if (!extras.requiresRegistration) {
+        return (
+          <Button
+            size="sm"
+            leftIcon={<FiGlobe />}
+            colorScheme="green"
+            variant="outline"
+            isDisabled
+          >
+            Ouvert au public
+          </Button>
+        );
+      }
+      
+      // 3. Inscription requise mais public ne peut pas s'inscrire
+      if (extras.requiresRegistration && !extras.allowPublicRegistration) {
+        return (
+          <Button
+            size="sm"
+            leftIcon={<FiEyeOff />}
+            colorScheme="orange"
+            variant="outline"
+            isDisabled
+          >
+            Contact requis
+          </Button>
+        );
+      }
+      
+      // 4. Inscription requise ET public peut s'inscrire
+      if (extras.requiresRegistration && extras.allowPublicRegistration) {
+        return (
+          <Button
+            size="sm"
+            leftIcon={<FiUsers />}
+            colorScheme="blue"
+            variant="solid"
+            isDisabled
+          >
+            Inscription publique
+          </Button>
+        );
+      }
+      
+      return (
+        <Button size="sm" leftIcon={<FiGlobe />} colorScheme="gray" variant="outline" isDisabled>
+          Indéterminé
+        </Button>
+      );
+    } catch (e) {
+      console.log(`Error parsing extras for ${event.title}:`, e);
+      // Fallback très simple
+      return (
+        <Button size="sm" leftIcon={<FiGlobe />} colorScheme="green" variant="outline" isDisabled>
+          Legacy (ouvert)
+        </Button>
+      );
+    }
+  };
+
   const getVehicleName = (vehicleId) => {
     const vehicle = vehicles.find(v => v.parc === vehicleId);
     return vehicle ? `${vehicle.parc} - ${vehicle.modele}` : 'Aucun véhicule';
@@ -212,16 +698,22 @@ const Evenements = () => {
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const selectedVehicle = selectedEvent ? vehicles.find(v => v.parc === selectedEvent.vehicleId) : null;
 
-  // Vue en cartes
+  // Vue en cartes améliorée
   const CardsView = () => (
     <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
       {events.map((event) => (
-        <Card key={event.id} shadow="md">
+        <Card key={event.id} shadow="md" position="relative">
           <CardHeader pb={2}>
-            <HStack justify="space-between">
-              <Heading size="md" noOfLines={2}>{event.title}</Heading>
-              {getStatusBadge(event.status)}
-            </HStack>
+            <VStack align="start" spacing={2}>
+              <HStack justify="space-between" w="100%">
+                <Heading size="md" noOfLines={2} flex={1}>{event.title}</Heading>
+                {getRegistrationButton(event)}
+              </HStack>
+              <HStack spacing={2} wrap="wrap">
+                {getStatusBadge(event.status)}
+                {getEventTypeBadge(event)}
+              </HStack>
+            </VStack>
           </CardHeader>
           <CardBody pt={0}>
             <VStack align="start" spacing={2}>
@@ -233,7 +725,10 @@ const Evenements = () => {
               </HStack>
               
               {event.location && (
-                <Text fontSize="sm">📍 {event.location}</Text>
+                <HStack>
+                  <FiMapPin />
+                  <Text fontSize="sm">{event.location}</Text>
+                </HStack>
               )}
 
               {event.vehicleId && (
@@ -261,7 +756,7 @@ const Evenements = () => {
                 </HStack>
               )}
               
-              <HStack spacing={2} pt={4} w="100%">
+              <HStack spacing={2} pt={4} w="100%" wrap="wrap">
                 <Button
                   leftIcon={<FiEdit />}
                   size="sm"
@@ -302,8 +797,7 @@ const Evenements = () => {
           <Tr>
             <Th>Titre</Th>
             <Th>Date</Th>
-            <Th>Lieu</Th>
-            <Th>Véhicule</Th>
+            <Th>Type</Th>
             <Th>Statut</Th>
             <Th>Actions</Th>
           </Tr>
@@ -319,9 +813,13 @@ const Evenements = () => {
             >
               <Td fontWeight="semibold">{event.title}</Td>
               <Td>{event.date} {event.time && `à ${event.time}`}</Td>
-              <Td>{event.location || '-'}</Td>
-              <Td>{event.vehicleId ? getVehicleName(event.vehicleId) : '-'}</Td>
-              <Td>{getStatusBadge(event.status)}</Td>
+              <Td>{getEventTypeBadge(event)}</Td>
+              <Td>
+                <VStack align="start" spacing={1}>
+                  {getStatusBadge(event.status)}
+                  {getRegistrationButton(event)}
+                </VStack>
+              </Td>
               <Td>
                 <HStack spacing={1}>
                   <Button size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(event); }}>
@@ -348,36 +846,6 @@ const Evenements = () => {
           ))}
         </Tbody>
       </Table>
-
-      {/* Détails de l'événement sélectionné */}
-      {selectedEvent && selectedEventId && (
-        <Box mt={6} p={6} borderWidth="1px" borderRadius="lg" bg="blue.50">
-          {selectedVehicle && (
-            <Alert status="info" mb={4} borderRadius="md">
-              <AlertIcon />
-              <strong>{selectedVehicle.parc} - {selectedVehicle.modele}</strong> participera à cet événement !
-            </Alert>
-          )}
-          
-          <Heading size="md" mb={4}>{selectedEvent.title}</Heading>
-          <VStack align="start" spacing={2}>
-            <Text><strong>Date :</strong> {selectedEvent.date} à {selectedEvent.time}</Text>
-            <Text><strong>Lieu :</strong> {selectedEvent.location}</Text>
-            <Text><strong>Tarif adulte :</strong> {selectedEvent.adultPrice}€</Text>
-            <Text><strong>Tarif enfant :</strong> {selectedEvent.childPrice}€</Text>
-            <Text><strong>Description :</strong> {selectedEvent.description}</Text>
-            {selectedEvent.helloAssoUrl && (
-              <Text>
-                <strong>Lien HelloAsso :</strong>{' '}
-                <a href={selectedEvent.helloAssoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'blue' }}>
-                  {selectedEvent.helloAssoUrl}
-                </a>
-              </Text>
-            )}
-            <Text><strong>Véhicule participant :</strong> {selectedVehicle ? `${selectedVehicle.parc} - ${selectedVehicle.modele}` : 'Aucun'}</Text>
-          </VStack>
-        </Box>
-      )}
     </Box>
   );
 
@@ -386,6 +854,15 @@ const Evenements = () => {
       <Flex justify="space-between" align="center" mb={6}>
         <Heading>Gestion des Événements</Heading>
         <HStack spacing={3}>
+          <Button
+            leftIcon={<FiEdit />}
+            size="sm"
+            colorScheme="purple"
+            variant="outline"
+            onClick={testAPIConnection}
+          >
+            Tester API
+          </Button>
           <Button
             leftIcon={viewMode === 'cards' ? <FiList /> : <FiGrid />}
             size="sm"
@@ -412,9 +889,14 @@ const Evenements = () => {
         <Center py={20}>
           <VStack spacing={4}>
             <Text color="gray.500" fontSize="lg">Aucun événement trouvé</Text>
-            <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={handleCreate}>
-              Créer le premier événement
-            </Button>
+            <HStack spacing={3}>
+              <Button leftIcon={<FiEdit />} colorScheme="purple" variant="outline" onClick={testAPIConnection}>
+                Tester API
+              </Button>
+              <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={handleCreate}>
+                Créer le premier événement
+              </Button>
+            </HStack>
           </VStack>
         </Center>
       ) : viewMode === 'cards' ? (
@@ -423,124 +905,276 @@ const Evenements = () => {
         <TableView />
       )}
 
-      {/* Modal de création/édition */}
-      <Modal isOpen={isOpen} onClose={onClose} size="xl">
+      {/* Modal de création/édition corrigé */}
+      <Modal isOpen={isOpen} onClose={onClose} size="6xl">
         <ModalOverlay />
-        <ModalContent>
+        <ModalContent maxH="90vh" overflowY="auto">
           <ModalHeader>
             {editingEvent ? 'Modifier l\'événement' : 'Nouvel événement'}
           </ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            <VStack spacing={4}>
-              <FormControl isRequired>
-                <FormLabel>Titre</FormLabel>
-                <Input
-                  value={formData.title}
-                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Nom de l'événement"
-                />
-              </FormControl>
+            <Tabs>
+              <TabList>
+                <Tab>📋 Informations de base</Tab>
+                <Tab>⚙️ Configuration</Tab>
+                <Tab>🎯 Templates</Tab>
+              </TabList>
 
-              <HStack w="100%" spacing={4}>
-                <FormControl isRequired>
-                  <FormLabel>Date</FormLabel>
-                  <Input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                  />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Heure</FormLabel>
-                  <Input
-                    type="time"
-                    value={formData.time}
-                    onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
-                  />
-                </FormControl>
-              </HStack>
+              <TabPanels>
+                {/* Onglet 1: Informations de base */}
+                <TabPanel>
+                  <VStack spacing={4}>
+                    <FormControl isRequired>
+                      <FormLabel>Titre</FormLabel>
+                      <Input
+                        value={formData.title}
+                        onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="Nom de l'événement"
+                      />
+                    </FormControl>
 
-              <FormControl>
-                <FormLabel>Lieu</FormLabel>
-                <Input
-                  value={formData.location}
-                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                  placeholder="Lieu de l'événement"
-                />
-              </FormControl>
+                    <HStack w="100%" spacing={4}>
+                      <FormControl isRequired>
+                        <FormLabel>Date</FormLabel>
+                        <Input
+                          type="date"
+                          value={formData.date}
+                          onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Heure</FormLabel>
+                        <Input
+                          type="time"
+                          value={formData.time}
+                          onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
+                        />
+                      </FormControl>
+                    </HStack>
 
-              <FormControl>
-                <FormLabel>Véhicule participant</FormLabel>
-                <Select
-                  value={formData.vehicleId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, vehicleId: e.target.value }))}
-                  placeholder="Sélectionner un véhicule (optionnel)"
-                >
-                  {vehicles.map(vehicle => (
-                    <option key={vehicle.parc} value={vehicle.parc}>
-                      {vehicle.parc} - {vehicle.modele} ({vehicle.marque})
-                    </option>
-                  ))}
-                </Select>
-              </FormControl>
+                    <FormControl>
+                      <FormLabel>Lieu</FormLabel>
+                      <Input
+                        value={formData.location}
+                        onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                        placeholder="Lieu de l'événement"
+                      />
+                    </FormControl>
 
-              <FormControl>
-                <FormLabel>Description</FormLabel>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Description de l'événement"
-                  rows={4}
-                />
-              </FormControl>
+                    <FormControl>
+                      <FormLabel>Véhicule participant</FormLabel>
+                      <Select
+                        value={formData.vehicleId}
+                        onChange={(e) => setFormData(prev => ({ ...prev, vehicleId: e.target.value }))}
+                        placeholder="Sélectionner un véhicule (optionnel)"
+                      >
+                        {vehicles.map(vehicle => (
+                          <option key={vehicle.parc} value={vehicle.parc}>
+                            {vehicle.parc} - {vehicle.modele} ({vehicle.marque})
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
 
-              <HStack w="100%" spacing={4}>
-                <FormControl>
-                  <FormLabel>Prix adulte (€)</FormLabel>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.adultPrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, adultPrice: e.target.value }))}
-                    placeholder="15.00"
-                  />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Prix enfant (€)</FormLabel>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.childPrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, childPrice: e.target.value }))}
-                    placeholder="8.00"
-                  />
-                </FormControl>
-              </HStack>
+                    <FormControl>
+                      <FormLabel>Description</FormLabel>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Description de l'événement"
+                        rows={4}
+                      />
+                    </FormControl>
+                  </VStack>
+                </TabPanel>
 
-              <FormControl>
-                <FormLabel>Lien HelloAsso</FormLabel>
-                <Input
-                  value={formData.helloAssoUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, helloAssoUrl: e.target.value }))}
-                  placeholder="https://www.helloasso.com/..."
-                />
-              </FormControl>
+                {/* Onglet 2: Configuration corrigée */}
+                <TabPanel>
+                  <VStack spacing={6}>
+                    {/* Visibilité */}
+                    <Box w="100%" p={4} borderWidth="1px" borderRadius="md" bg="gray.50">
+                      <Heading size="sm" mb={3}>👁️ Visibilité</Heading>
+                      <FormControl>
+                        <HStack>
+                          <Switch
+                            isChecked={formData.isVisible}
+                            onChange={(e) => setFormData(prev => ({ ...prev, isVisible: e.target.checked }))}
+                          />
+                          <FormLabel mb={0}>Visible sur le site public</FormLabel>
+                        </HStack>
+                        <Alert status={formData.isVisible ? "success" : "warning"} mt={2} borderRadius="md">
+                          <AlertIcon />
+                          <Text fontSize="sm">
+                            {formData.isVisible 
+                              ? "✅ L'événement apparaîtra sur la page Events du site externe" 
+                              : "🔒 Événement privé, visible seulement dans l'interface interne"}
+                          </Text>
+                        </Alert>
+                      </FormControl>
+                    </Box>
 
-              <FormControl>
-                <FormLabel>Statut</FormLabel>
-                <Select
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                >
-                  <option value="DRAFT">Brouillon</option>
-                  <option value="PUBLISHED">Publié</option>
-                </Select>
-              </FormControl>
-            </VStack>
+                    {/* Inscription */}
+                    <Box w="100%" p={4} borderWidth="1px" borderRadius="md" bg="gray.50">
+                      <Heading size="sm" mb={3}>📝 Gestion des inscriptions</Heading>
+                      <VStack spacing={4} align="start">
+                        <FormControl>
+                          <HStack>
+                            <Switch
+                              isChecked={formData.requiresRegistration}
+                              onChange={(e) => setFormData(prev => ({ ...prev, requiresRegistration: e.target.checked }))}
+                            />
+                            <FormLabel mb={0}>Inscription requise pour participer</FormLabel>
+                          </HStack>
+                          <Alert status={formData.requiresRegistration ? "info" : "success"} mt={2} borderRadius="md">
+                            <AlertIcon />
+                            <Text fontSize="sm">
+                              {formData.requiresRegistration 
+                                ? "📝 Une inscription sera nécessaire pour participer à cet événement" 
+                                : "🌍 Bouton 'Ouvert au public' - Aucune inscription nécessaire"}
+                            </Text>
+                          </Alert>
+                        </FormControl>
+
+                        {formData.requiresRegistration && (
+                          <FormControl>
+                            <HStack>
+                              <Switch
+                                isChecked={formData.allowPublicRegistration}
+                                onChange={(e) => setFormData(prev => ({ ...prev, allowPublicRegistration: e.target.checked }))}
+                              />
+                              <FormLabel mb={0}>Le public peut s'inscrire directement</FormLabel>
+                            </HStack>
+                            <Alert status={formData.allowPublicRegistration ? "success" : "warning"} mt={2} borderRadius="md">
+                              <AlertIcon />
+                              <Text fontSize="sm">
+                                {formData.allowPublicRegistration 
+                                  ? "✅ Bouton d'inscription disponible sur le site externe" 
+                                  : "📞 Bouton 'Contacter l'association' - Inscription via contact uniquement"}
+                              </Text>
+                            </Alert>
+                          </FormControl>
+                        )}
+
+                        {/* Reste de la configuration d'inscription... */}
+                      </VStack>
+                    </Box>
+
+                    {/* Tarification */}
+                    <Box w="100%" p={4} borderWidth="1px" borderRadius="md" bg="gray.50">
+                      <Heading size="sm" mb={3}>💰 Tarification</Heading>
+                      <VStack spacing={3} align="start">
+                        <FormControl>
+                          <HStack>
+                            <Switch
+                              isChecked={formData.isFree}
+                              onChange={(e) => setFormData(prev => ({ 
+                                ...prev, 
+                                isFree: e.target.checked,
+                                adultPrice: e.target.checked ? '' : prev.adultPrice,
+                                childPrice: e.target.checked ? '' : prev.childPrice
+                              }))}
+                            />
+                            <FormLabel mb={0}>Événement gratuit</FormLabel>
+                          </HStack>
+                        </FormControl>
+
+                        {!formData.isFree && (
+                          <HStack w="100%" spacing={4}>
+                            <FormControl>
+                              <FormLabel>Prix adulte (€)</FormLabel>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={formData.adultPrice}
+                                onChange={(e) => setFormData(prev => ({ ...prev, adultPrice: e.target.value }))}
+                                placeholder="15.00"
+                              />
+                            </FormControl>
+                            <FormControl>
+                              <FormLabel>Prix enfant (€)</FormLabel>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={formData.childPrice}
+                                onChange={(e) => setFormData(prev => ({ ...prev, childPrice: e.target.value }))}
+                                placeholder="8.00"
+                              />
+                            </FormControl>
+                          </HStack>
+                        )}
+                      </VStack>
+                    </Box>
+
+                    <FormControl>
+                      <FormLabel>Statut de publication</FormLabel>
+                      <Select
+                        value={formData.status}
+                        onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                      >
+                        <option value="DRAFT">Brouillon</option>
+                        <option value="PUBLISHED">Publié</option>
+                      </Select>
+                    </FormControl>
+                  </VStack>
+                </TabPanel>
+
+                {/* Onglet 3: Templates corrigés */}
+                <TabPanel>
+                  <VStack spacing={4}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>
+                      🎯 Choisissez un template pour configurer rapidement votre événement
+                    </Text>
+                    
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} w="100%">
+                      {Object.entries(EVENT_TEMPLATES).map(([key, template]) => (
+                        <Card 
+                          key={key}
+                          cursor="pointer"
+                          onClick={() => applyTemplate(key)}
+                          bg={selectedTemplate === key ? `${template.color}.50` : "white"}
+                          borderColor={selectedTemplate === key ? `${template.color}.200` : "gray.200"}
+                          borderWidth="2px"
+                          _hover={{ borderColor: `${template.color}.300` }}
+                        >
+                          <CardBody>
+                            <VStack align="start" spacing={2}>
+                              <HStack>
+                                <Icon as={template.icon} color={`${template.color}.500`} />
+                                <Text fontWeight="bold" color={`${template.color}.700`}>
+                                  {template.name}
+                                </Text>
+                              </HStack>
+                              <Text fontSize="sm" color="gray.600">
+                                {template.description}
+                              </Text>
+                              {selectedTemplate === key && (
+                                <Badge colorScheme={template.color}>Sélectionné</Badge>
+                              )}
+                            </VStack>
+                          </CardBody>
+                        </Card>
+                      ))}
+                    </SimpleGrid>
+
+                    {selectedTemplate && (
+                      <Alert status="info" borderRadius="md">
+                        <AlertIcon />
+                        <VStack align="start" spacing={1}>
+                          <Text fontWeight="bold">Template appliqué</Text>
+                          <Text fontSize="sm">
+                            Vous pouvez maintenant personnaliser les paramètres dans l'onglet "Configuration"
+                          </Text>
+                        </VStack>
+                      </Alert>
+                    )}
+                  </VStack>
+                </TabPanel>
+              </TabPanels>
+            </Tabs>
           </ModalBody>
           <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>
+            <Button variant="ghost" mr={3} onClick={() => { onClose(); resetForm(); }}>
               Annuler
             </Button>
             <Button colorScheme="blue" onClick={handleSave} isLoading={saving}>

@@ -105,3 +105,25 @@ model NewsletterSubscriber {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model EventRegistration {
+  id                String   @id @default(cuid())
+  eventId           String
+  participantName   String
+  participantEmail  String
+  helloAssoOrderId  String?  // ID de commande HelloAsso
+  helloAssoStatus   String?  // PENDING, VALIDATED, CANCELLED
+  adultTickets      Int      @default(0)
+  childTickets      Int      @default(0)
+  totalAmount       Float?
+  paymentMethod     String   // "helloasso", "internal", "free"
+  registrationDate  DateTime @default(now())
+  ticketSent        Boolean  @default(false)
+  qrCodeData        String?  // JSON du QR code
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([eventId])
+  @@index([participantEmail])
+  @@index([helloAssoOrderId])
+}

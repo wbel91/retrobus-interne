@@ -857,3 +857,286 @@ app.listen(PORT, () => {
 });
 
 export default app;
+
+// ---------- Inscriptions et billets ----------
+
+// Modèle pour les inscriptions
+// Vous devez d'abord ajouter cette table à votre schema.prisma :
+/*
+model EventRegistration {
+  id                String   @id @default(cuid())
+  eventId           String
+  participantName   String
+  participantEmail  String
+  helloAssoOrderId  String?  // ID de commande HelloAsso
+  helloAssoStatus   String?  // PENDING, VALIDATED, CANCELLED
+  adultTickets      Int      @default(0)
+  childTickets      Int      @default(0)
+  totalAmount       Float?
+  paymentMethod     String   // "helloasso", "internal", "free"
+  registrationDate  DateTime @default(now())
+  ticketSent        Boolean  @default(false)
+  qrCodeData        String?  // JSON du QR code
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([eventId])
+  @@index([participantEmail])
+  @@index([helloAssoOrderId])
+}
+*/
+
+// Endpoint pour créer une inscription
+app.post('/registrations', async (req, res) => {
+  try {
+    const { eventId, participantName, participantEmail, adultTickets = 1, childTickets = 0, paymentMethod = 'internal' } = req.body;
+    
+    if (!eventId || !participantName || !participantEmail) {
+      return res.status(400).json({ error: 'Données manquantes' });
+    }
+    
+    // Vérifier que l'événement existe et est accessible
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      return res.status(404).json({ error: 'Événement non trouvé' });
+    }
+    
+    // Calculer le montant total
+    const totalAmount = (event.adultPrice || 0) * adultTickets + (event.childPrice || 0) * childTickets;
+    
+    // Créer l'inscription
+    const registration = await prisma.eventRegistration.create({
+      data: {
+        eventId,
+        participantName,
+        participantEmail,
+        adultTickets,
+        childTickets,
+        totalAmount,
+        paymentMethod,
+        helloAssoStatus: paymentMethod === 'helloasso' ? 'PENDING' : 'VALIDATED'
+      }
+    });
+    
+    // Si c'est gratuit ou interne, générer le billet immédiatement
+    if (paymentMethod === 'free' || paymentMethod === 'internal') {
+      await generateAndSendTicket(registration.id);
+    }
+    
+    res.status(201).json({
+      registrationId: registration.id,
+      helloAssoUrl: paymentMethod === 'helloasso' ? event.helloAssoUrl : null,
+      totalAmount,
+      status: registration.helloAssoStatus
+    });
+    
+  } catch (e) {
+    console.error('Erreur création inscription:', e);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'inscription' });
+  }
+});
+
+// Webhook HelloAsso (appelé par HelloAsso après un paiement)
+app.post('/webhooks/helloasso', async (req, res) => {
+  try {
+    console.log('🔔 Webhook HelloAsso reçu:', req.body);
+    
+    const { data } = req.body;
+    const { order } = data;
+    
+    if (!order || !order.id) {
+      return res.status(400).json({ error: 'Données webhook invalides' });
+    }
+    
+    // Trouver l'inscription correspondante
+    const registration = await prisma.eventRegistration.findFirst({
+      where: { helloAssoOrderId: order.id.toString() }
+    });
+    
+    if (!registration) {
+      console.log('⚠️ Inscription non trouvée pour order ID:', order.id);
+      return res.status(404).json({ error: 'Inscription non trouvée' });
+    }
+    
+    // Mettre à jour le statut selon HelloAsso
+    const newStatus = order.state === 'Authorized' ? 'VALIDATED' : 'PENDING';
+    
+    await prisma.eventRegistration.update({
+      where: { id: registration.id },
+      data: { helloAssoStatus: newStatus }
+    });
+    
+    // Si validé, générer et envoyer le billet
+    if (newStatus === 'VALIDATED' && !registration.ticketSent) {
+      await generateAndSendTicket(registration.id);
+    }
+    
+    res.status(200).json({ success: true });
+    
+  } catch (e) {
+    console.error('Erreur webhook HelloAsso:', e);
+    res.status(500).json({ error: 'Erreur traitement webhook' });
+  }
+});
+
+// Endpoint pour vérifier le statut d'une inscription
+app.get('/registrations/:id/status', async (req, res) => {
+  try {
+    const registration = await prisma.eventRegistration.findUnique({
+      where: { id: req.params.id },
+      include: {
+        event: {
+          select: { title: true, date: true, time: true, location: true }
+        }
+      }
+    });
+    
+    if (!registration) {
+      return res.status(404).json({ error: 'Inscription non trouvée' });
+    }
+    
+    res.json({
+      id: registration.id,
+      status: registration.helloAssoStatus,
+      ticketSent: registration.ticketSent,
+      event: registration.event,
+      qrCode: registration.qrCodeData
+    });
+    
+  } catch (e) {
+    console.error('Erreur vérification statut:', e);
+    res.status(500).json({ error: 'Erreur lors de la vérification' });
+  }
+});
+
+// Fonction pour générer et envoyer un billet
+async function generateAndSendTicket(registrationId) {
+  try {
+    const registration = await prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      include: { event: true }
+    });
+    
+    if (!registration || registration.ticketSent) {
+      return;
+    }
+    
+    // Générer les données du QR Code
+    const qrCodeData = {
+      registrationId: registration.id,
+      eventId: registration.eventId,
+      eventTitle: registration.event.title,
+      eventDate: registration.event.date,
+      eventTime: registration.event.time,
+      eventLocation: registration.event.location,
+      participantName: registration.participantName,
+      participantEmail: registration.participantEmail,
+      adultTickets: registration.adultTickets,
+      childTickets: registration.childTickets,
+      totalAmount: registration.totalAmount,
+      validationCode: generateValidationCode(),
+      issueDate: new Date().toISOString()
+    };
+    
+    // Sauvegarder les données du QR Code
+    await prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { 
+        qrCodeData: JSON.stringify(qrCodeData),
+        ticketSent: true 
+      }
+    });
+    
+    // Envoyer l'email avec le billet
+    await sendTicketEmail(registration, qrCodeData);
+    
+    console.log(`✅ Billet envoyé pour inscription ${registrationId}`);
+    
+  } catch (e) {
+    console.error('Erreur génération billet:', e);
+  }
+}
+
+// Fonction pour générer un code de validation unique
+function generateValidationCode() {
+  return `RBE-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+}
+
+// Fonction pour envoyer l'email avec le billet
+async function sendTicketEmail(registration, qrCodeData) {
+  try {
+    // URL du QR Code généré
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&format=png&data=${encodeURIComponent(JSON.stringify(qrCodeData))}`;
+    
+    // Template d'email pour le billet
+    const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Votre billet RétroBus Essonne</title>
+        <style>
+            body { font-family: 'Montserrat', Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #be003c 0%, #e40045 100%); color: white; padding: 30px; text-align: center; }
+            .content { padding: 30px; }
+            .ticket-info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .qr-section { text-align: center; margin: 30px 0; }
+            .qr-code { border: 3px solid #be003c; border-radius: 12px; }
+            .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎫 Votre Billet RétroBus</h1>
+                <p>Association RétroBus Essonne</p>
+            </div>
+            
+            <div class="content">
+                <h2>Bonjour ${registration.participantName},</h2>
+                <p>Votre inscription à l'événement <strong>${registration.event.title}</strong> a été confirmée !</p>
+                
+                <div class="ticket-info">
+                    <h3>📅 Détails de votre réservation</h3>
+                    <p><strong>Événement :</strong> ${registration.event.title}</p>
+                    <p><strong>Date :</strong> ${registration.event.date} ${registration.event.time ? `à ${registration.event.time}` : ''}</p>
+                    <p><strong>Lieu :</strong> ${registration.event.location || 'À préciser'}</p>
+                    <p><strong>Nombre de billets :</strong> ${registration.adultTickets} adulte(s) + ${registration.childTickets} enfant(s)</p>
+                    ${registration.totalAmount > 0 ? `<p><strong>Montant payé :</strong> ${registration.totalAmount}€</p>` : '<p><strong>Événement gratuit</strong></p>'}
+                    <p><strong>Code de validation :</strong> ${qrCodeData.validationCode}</p>
+                </div>
+                
+                <div class="qr-section">
+                    <h3>🎫 Votre billet électronique</h3>
+                    <p>Présentez ce QR Code à l'entrée de l'événement :</p>
+                    <img src="${qrCodeUrl}" alt="QR Code billet" class="qr-code" width="256" height="256">
+                </div>
+                
+                <p><strong>Important :</strong> Conservez ce billet et présentez-le à l'entrée. Une pièce d'identité pourra vous être demandée.</p>
+            </div>
+            
+            <div class="footer">
+                <p>Association RétroBus Essonne | Email: association.rbe@gmail.com</p>
+                <p>Ce billet est personnel et non transférable.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+    
+    // Ici, vous devriez utiliser votre service d'email (Nodemailer, SendGrid, etc.)
+    console.log('📧 Email billet préparé pour:', registration.participantEmail);
+    console.log('QR Code URL:', qrCodeUrl);
+    
+    // Simulation de l'envoi d'email
+    // await emailService.send({
+    //   to: registration.participantEmail,
+    //   subject: `🎫 Votre billet - ${registration.event.title}`,
+    //   html: emailHtml
+    // });
+    
+  } catch (e) {
+    console.error('Erreur envoi email billet:', e);
+  }
+}
