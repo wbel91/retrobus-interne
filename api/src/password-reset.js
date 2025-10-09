@@ -6,7 +6,7 @@ import nodemailer from 'nodemailer';
 const prisma = new PrismaClient();
 
 // Configuration email (à adapter selon votre service)
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   // Configuration à personnaliser
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: process.env.SMTP_PORT || 587,
