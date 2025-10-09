@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
 import Retromail from "./pages/Retromail";
 import Newsletter from "./pages/Newsletter"; // <- ajouter
+import Members from "./pages/Members";
 
 export default function App() {
   const { isAuthenticated } = useUser();
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/mobile/v/:parc" element={<ProtectedRoute><MobileVehicle /></ProtectedRoute>} />
         <Route path="/retromail" element={<ProtectedRoute><Retromail /></ProtectedRoute>} />
         <Route path="/dashboard/newsletter" element={<ProtectedRoute><Newsletter /></ProtectedRoute>} />
+        <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
         
         {/* Redirection par défaut vers le dashboard si connecté, sinon vers login */}
         <Route path="*" element={<ProtectedRoute><DashboardHome /></ProtectedRoute>} />

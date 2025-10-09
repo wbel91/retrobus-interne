@@ -8,6 +8,8 @@ import fs from 'fs';
 import QRCode from 'qrcode';
 import jwt from 'jsonwebtoken';
 import { USERS } from './auth/users.js';
+import { documentsAPI, upload } from './documents.js';
+import { passwordResetAPI } from './password-reset.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -160,6 +162,9 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+// Add this alias to fix route usage below
+const authenticateToken = requireAuth;
 
 // Auth route
 app.post('/auth/login', (req, res) => {
@@ -850,6 +855,286 @@ app.delete('/newsletter/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ---------- API Members Management ----------
+
+// GET /api/members - List all members with pagination and filters
+app.get('/api/members', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { page = 1, limit = 20, status, search, sort = 'lastName', role } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Build filters
+    const where = {};
+    if (status && status !== 'ALL') where.membershipStatus = status;
+    if (role && role !== 'ALL') where.role = role;
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { memberNumber: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    // Define sort order
+    const orderBy = {};
+    if (sort === 'lastName') orderBy.lastName = 'asc';
+    else if (sort === 'joinDate') orderBy.joinDate = 'desc';
+    else if (sort === 'renewalDate') orderBy.renewalDate = 'asc';
+    else if (sort === 'memberNumber') orderBy.memberNumber = 'asc';
+    else if (sort === 'role') orderBy.role = 'asc';
+
+    const [members, total] = await Promise.all([
+      prisma.member.findMany({
+        where,
+        orderBy,
+        skip: parseInt(offset),
+        take: parseInt(limit),
+        select: {
+          id: true,
+          memberNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          membershipType: true,
+          membershipStatus: true,
+          role: true,
+          joinDate: true,
+          renewalDate: true,
+          hasExternalAccess: true,
+          hasInternalAccess: true,
+          newsletter: true,
+          lastPaymentDate: true,
+          paymentAmount: true,
+          paymentMethod: true,
+          licenseExpiryDate: true,
+          driverLicense: true
+        }
+      }),
+      prisma.member.count({ where })
+    ]);
+
+    res.json({
+      members,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (e) {
+    console.error('Erreur récupération adhérents (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des adhérents' });
+  }
+});
+
+// POST /api/members - Create new member
+app.post('/api/members', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const {
+      firstName, lastName, email, phone, address, city, postalCode,
+      birthDate, membershipType = 'STANDARD', membershipStatus = 'PENDING',
+      renewalDate, paymentAmount, paymentMethod, hasExternalAccess = false,
+      hasInternalAccess = false, newsletter = true, notes, role = 'MEMBER',
+      driverLicense, licenseExpiryDate, medicalCertificateDate,
+      emergencyContact, emergencyPhone, driverCertifications = [],
+      vehicleAuthorizations = [], maxPassengers, driverNotes
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Prénom, nom et email requis' });
+    }
+
+    // Check if email already exists
+    const existingMember = await prisma.member.findUnique({ where: { email } });
+    if (existingMember) {
+      return res.status(409).json({ error: 'Un adhérent avec cet email existe déjà' });
+    }
+
+    // Generate unique member number
+    const year = new Date().getFullYear();
+    const lastMember = await prisma.member.findFirst({
+      where: { memberNumber: { startsWith: `${year}-` } },
+      orderBy: { memberNumber: 'desc' }
+    });
+
+    let memberNumber = `${year}-001`;
+    if (lastMember) {
+      const lastNumber = parseInt(lastMember.memberNumber.split('-')[1]);
+      memberNumber = `${year}-${String(lastNumber + 1).padStart(3, '0')}`;
+    }
+
+    const member = await prisma.member.create({
+      data: {
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        phone,
+        address,
+        city,
+        postalCode,
+        birthDate: birthDate ? new Date(birthDate) : null,
+        membershipType,
+        membershipStatus,
+        renewalDate: renewalDate ? new Date(renewalDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
+        paymentMethod,
+        hasExternalAccess,
+        hasInternalAccess,
+        newsletter,
+        notes,
+        role,
+        driverLicense,
+        licenseExpiryDate: licenseExpiryDate ? new Date(licenseExpiryDate) : null,
+        medicalCertificateDate: medicalCertificateDate ? new Date(medicalCertificateDate) : null,
+        emergencyContact,
+        emergencyPhone,
+        driverCertifications,
+        vehicleAuthorizations,
+        maxPassengers: maxPassengers ? parseInt(maxPassengers) : null,
+        driverNotes,
+        createdBy: req.user?.username || 'system',
+        lastPaymentDate: paymentAmount ? new Date() : null
+      }
+    });
+
+    // Don't return password
+    const { internalPassword, ...memberData } = member;
+    res.status(201).json(memberData);
+  } catch (e) {
+    console.error('Erreur création adhérent (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
+  }
+});
+
+// PUT /api/members/:id - Update member
+app.put('/api/members/:id', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const updateData = { ...req.body };
+
+    // Convert dates if necessary
+    if (updateData.birthDate) updateData.birthDate = new Date(updateData.birthDate);
+    if (updateData.renewalDate) updateData.renewalDate = new Date(updateData.renewalDate);
+    if (updateData.licenseExpiryDate) updateData.licenseExpiryDate = new Date(updateData.licenseExpiryDate);
+    if (updateData.medicalCertificateDate) updateData.medicalCertificateDate = new Date(updateData.medicalCertificateDate);
+    if (updateData.paymentAmount) updateData.paymentAmount = parseFloat(updateData.paymentAmount);
+    if (updateData.maxPassengers) updateData.maxPassengers = parseInt(updateData.maxPassengers);
+
+    // Don't allow modification of member number via this route
+    delete updateData.memberNumber;
+    delete updateData.internalPassword; // Security
+
+    const member = await prisma.member.update({
+      where: { id },
+      data: updateData
+    });
+
+    const { internalPassword, ...memberData } = member;
+    res.json(memberData);
+  } catch (e) {
+    console.error('Erreur mise à jour adhérent (/api):', e);
+    if (e.code === 'P2025') {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'adhérent' });
+  }
+});
+
+app.delete('/api/members/:id', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    await prisma.member.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Erreur suppression adhérent (/api):', e);
+    if (e.code === 'P2025') {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la suppression de l\'adhérent' });
+  }
+});
+
+app.get('/api/members/:id', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const member = await prisma.member.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+
+    const { internalPassword, ...memberData } = member;
+    res.json(memberData);
+  } catch (e) {
+    console.error('Erreur récupération adhérent (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération de l\'adhérent' });
+  }
+});
+
+// GET /api/members/stats - Member statistics
+app.get('/api/members/stats', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const [
+      totalMembers,
+      activeMembers,
+      expiredMembers,
+      pendingMembers,
+      membersWithInternalAccess,
+      recentJoins,
+      drivers
+    ] = await Promise.all([
+      prisma.member.count(),
+      prisma.member.count({ where: { membershipStatus: 'ACTIVE' } }),
+      prisma.member.count({ where: { membershipStatus: 'EXPIRED' } }),
+      prisma.member.count({ where: { membershipStatus: 'PENDING' } }),
+      prisma.member.count({ where: { hasInternalAccess: true } }),
+      prisma.member.count({
+        where: { joinDate: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }
+      }),
+      prisma.member.count({ where: { role: 'DRIVER' } })
+    ]);
+
+    res.json({
+      totalMembers,
+      activeMembers,
+      expiredMembers,
+      pendingMembers,
+      membersWithInternalAccess,
+      recentJoins,
+      drivers
+    });
+  } catch (e) {
+    console.error('Erreur statistiques adhérents (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
+  }
+});
+
+// Routes pour les documents
+app.get('/api/documents/member/:memberId', authenticateToken, documentsAPI.getByMember);
+app.post('/api/documents/member/:memberId/upload', authenticateToken, upload.single('document'), documentsAPI.upload);
+app.get('/api/documents/:documentId/download', authenticateToken, documentsAPI.download);
+app.put('/api/documents/:documentId/status', authenticateToken, documentsAPI.updateStatus);
+app.delete('/api/documents/:documentId', authenticateToken, documentsAPI.delete);
+app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
+
+// Routes pour la réinitialisation de mot de passe
+app.post('/api/password-reset/request/:memberId', authenticateToken, passwordResetAPI.requestReset);
+app.get('/api/password-reset/validate/:token', passwordResetAPI.validateToken);
+app.post('/api/password-reset/reset/:token', passwordResetAPI.resetPassword);
+app.post('/api/password-reset/generate-temporary/:memberId', authenticateToken, passwordResetAPI.generateTemporaryPassword);
+
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
@@ -1140,3 +1425,409 @@ async function sendTicketEmail(registration, qrCodeData) {
     console.error('Erreur envoi email billet:', e);
   }
 }
+
+// ---------- Gestion des Adhérents ----------
+
+// Récupérer tous les adhérents avec pagination et filtres
+app.get('/members', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { page = 1, limit = 20, status, search, sort = 'lastName' } = req.query;
+    const offset = (page - 1) * limit;
+    
+    // Construire les filtres
+    const where = {};
+    if (status && status !== 'ALL') where.membershipStatus = status;
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { memberNumber: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    
+    // Définir l'ordre de tri
+    const orderBy = {};
+    if (sort === 'lastName') orderBy.lastName = 'asc';
+    else if (sort === 'joinDate') orderBy.joinDate = 'desc';
+    else if (sort === 'renewalDate') orderBy.renewalDate = 'asc';
+    else if (sort === 'memberNumber') orderBy.memberNumber = 'asc';
+    
+    const [members, total] = await Promise.all([
+      prisma.member.findMany({
+        where,
+        orderBy,
+        skip: parseInt(offset),
+        take: parseInt(limit),
+        select: {
+          id: true,
+          memberNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          membershipType: true,
+          membershipStatus: true,
+          joinDate: true,
+          renewalDate: true,
+          hasExternalAccess: true,
+          hasInternalAccess: true,
+          newsletter: true,
+          lastPaymentDate: true,
+          paymentAmount: true,
+          paymentMethod: true
+        }
+      }),
+      prisma.member.count({ where })
+    ]);
+    
+    res.json({
+      members,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (e) {
+    console.error('Erreur récupération adhérents:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des adhérents' });
+  }
+});
+
+// Créer un nouvel adhérent
+app.post('/members', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const {
+      firstName, lastName, email, phone, address, city, postalCode,
+      birthDate, membershipType = 'STANDARD', membershipStatus = 'PENDING',
+      renewalDate, paymentAmount, paymentMethod, hasExternalAccess = false,
+      hasInternalAccess = false, newsletter = true, notes
+    } = req.body;
+    
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Prénom, nom et email requis' });
+    }
+    
+    // Vérifier si l'email existe déjà
+    const existingMember = await prisma.member.findUnique({
+      where: { email }
+    });
+    
+    if (existingMember) {
+      return res.status(409).json({ error: 'Un adhérent avec cet email existe déjà' });
+    }
+    
+    // Générer un numéro d'adhérent unique
+    const year = new Date().getFullYear();
+    const lastMember = await prisma.member.findFirst({
+      where: { memberNumber: { startsWith: `${year}-` } },
+      orderBy: { memberNumber: 'desc' }
+    });
+    
+    let memberNumber;
+    if (lastMember) {
+      const lastNumber = parseInt(lastMember.memberNumber.split('-')[1]);
+      memberNumber = `${year}-${String(lastNumber + 1).padStart(3, '0')}`;
+    } else {
+      memberNumber = `${year}-001`;
+    }
+    
+    const member = await prisma.member.create({
+      data: {
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        phone,
+        address,
+        city,
+        postalCode,
+        birthDate: birthDate ? new Date(birthDate) : null,
+        membershipType,
+        membershipStatus,
+        renewalDate: renewalDate ? new Date(renewalDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // +1 an par défaut
+        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
+        paymentMethod,
+        hasExternalAccess,
+        hasInternalAccess,
+        newsletter,
+        notes,
+        createdBy: req.user?.username || 'system',
+        lastPaymentDate: paymentAmount ? new Date() : null
+      }
+    });
+    
+    // Ne pas renvoyer le mot de passe
+    const { internalPassword, ...memberData } = member;
+    res.status(201).json(memberData);
+  } catch (e) {
+    console.error('Erreur création adhérent:', e);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
+  }
+});
+
+// Mettre à jour un adhérent
+app.put('/members/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const updateData = { ...req.body };
+    
+    // Convertir les dates si nécessaire
+    if (updateData.birthDate) updateData.birthDate = new Date(updateData.birthDate);
+    if (updateData.renewalDate) updateData.renewalDate = new Date(updateData.renewalDate);
+    if (updateData.paymentAmount) updateData.paymentAmount = parseFloat(updateData.paymentAmount);
+    
+    // Ne pas permettre la modification du numéro d'adhérent via cette route
+    delete updateData.memberNumber;
+    delete updateData.internalPassword; // Sécurité
+    
+    const member = await prisma.member.update({
+      where: { id },
+      data: updateData
+    });
+    
+    const { internalPassword, ...memberData } = member;
+    res.json(memberData);
+  } catch (e) {
+    console.error('Erreur mise à jour adhérent:', e);
+    if (e.code === 'P2025') {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'adhérent' });
+  }
+});
+
+app.delete('/members/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    await prisma.member.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Erreur suppression adhérent:', e);
+    if (e.code === 'P2025') {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la suppression de l\'adhérent' });
+  }
+});
+
+// --- API-prefixed aliases for production proxies ---
+
+app.get('/api/members', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { page = 1, limit = 20, status, search, sort = 'lastName' } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (status && status !== 'ALL') where.membershipStatus = status;
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { memberNumber: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const orderBy = {};
+    if (sort === 'lastName') orderBy.lastName = 'asc';
+    else if (sort === 'joinDate') orderBy.joinDate = 'desc';
+    else if (sort === 'renewalDate') orderBy.renewalDate = 'asc';
+    else if (sort === 'memberNumber') orderBy.memberNumber = 'asc';
+
+    const [members, total] = await Promise.all([
+      prisma.member.findMany({
+        where,
+        orderBy,
+        skip: parseInt((page - 1) * limit),
+        take: parseInt(limit),
+        select: {
+          id: true,
+          memberNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          membershipType: true,
+          membershipStatus: true,
+          joinDate: true,
+          renewalDate: true,
+          hasExternalAccess: true,
+          hasInternalAccess: true,
+          newsletter: true,
+          lastPaymentDate: true,
+          paymentAmount: true,
+          paymentMethod: true
+        }
+      }),
+      prisma.member.count({ where })
+    ]);
+
+    res.json({
+      members,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (e) {
+    console.error('Erreur récupération adhérents (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des adhérents' });
+  }
+});
+
+app.post('/api/members', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const {
+      firstName, lastName, email, phone, address, city, postalCode,
+      birthDate, membershipType = 'STANDARD', membershipStatus = 'PENDING',
+      renewalDate, paymentAmount, paymentMethod, hasExternalAccess = false,
+      hasInternalAccess = false, newsletter = true, notes
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Prénom, nom et email requis' });
+    }
+
+    const existingMember = await prisma.member.findUnique({ where: { email } });
+    if (existingMember) return res.status(409).json({ error: 'Un adhérent avec cet email existe déjà' });
+
+    const year = new Date().getFullYear();
+    const lastMember = await prisma.member.findFirst({
+      where: { memberNumber: { startsWith: `${year}-` } },
+      orderBy: { memberNumber: 'desc' }
+    });
+    let memberNumber = `${year}-001`;
+    if (lastMember) {
+      const lastNumber = parseInt(lastMember.memberNumber.split('-')[1]);
+      memberNumber = `${year}-${String(lastNumber + 1).padStart(3, '0')}`;
+    }
+
+    const member = await prisma.member.create({
+      data: {
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        phone,
+        address,
+        city,
+        postalCode,
+        birthDate: birthDate ? new Date(birthDate) : null,
+        membershipType,
+        membershipStatus,
+        renewalDate: renewalDate ? new Date(renewalDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
+        paymentMethod,
+        hasExternalAccess,
+        hasInternalAccess,
+        newsletter,
+        notes,
+        createdBy: req.user?.username || 'system',
+        lastPaymentDate: paymentAmount ? new Date() : null
+      }
+    });
+
+    const { internalPassword, ...memberData } = member;
+    res.status(201).json(memberData);
+  } catch (e) {
+    console.error('Erreur création adhérent (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
+  }
+});
+
+app.put('/api/members/:id', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const updateData = { ...req.body };
+    if (updateData.birthDate) updateData.birthDate = new Date(updateData.birthDate);
+    if (updateData.renewalDate) updateData.renewalDate = new Date(updateData.renewalDate);
+    if (updateData.paymentAmount) updateData.paymentAmount = parseFloat(updateData.paymentAmount);
+    delete updateData.memberNumber;
+    delete updateData.internalPassword;
+
+    const member = await prisma.member.update({ where: { id }, data: updateData });
+    const { internalPassword, ...memberData } = member;
+    res.json(memberData);
+  } catch (e) {
+    console.error('Erreur mise à jour adhérent (/api):', e);
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Adhérent non trouvé' });
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'adhérent' });
+  }
+});
+
+app.delete('/api/members/:id', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    await prisma.member.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Erreur suppression adhérent (/api):', e);
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Adhérent non trouvé' });
+    res.status(500).json({ error: 'Erreur lors de la suppression de l\'adhérent' });
+  }
+});
+
+app.get('/api/members/stats', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const [
+      totalMembers,
+      activeMembers,
+      expiredMembers,
+      pendingMembers,
+      membersWithInternalAccess,
+      recentJoins,
+      drivers
+    ] = await Promise.all([
+      prisma.member.count(),
+      prisma.member.count({ where: { membershipStatus: 'ACTIVE' } }),
+      prisma.member.count({ where: { membershipStatus: 'EXPIRED' } }),
+      prisma.member.count({ where: { membershipStatus: 'PENDING' } }),
+      prisma.member.count({ where: { hasInternalAccess: true } }),
+      prisma.member.count({
+        where: { joinDate: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }
+      }),
+      prisma.member.count({ where: { role: 'DRIVER' } })
+    ]);
+
+    res.json({
+      totalMembers,
+      activeMembers,
+      expiredMembers,
+      pendingMembers,
+      membersWithInternalAccess,
+      recentJoins,
+      drivers
+    });
+  } catch (e) {
+    console.error('Erreur statistiques adhérents (/api):', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
+  }
+});
+
+// Routes pour les documents
+app.get('/api/documents/member/:memberId', authenticateToken, documentsAPI.getByMember);
+app.post('/api/documents/member/:memberId/upload', authenticateToken, upload.single('document'), documentsAPI.upload);
+app.get('/api/documents/:documentId/download', authenticateToken, documentsAPI.download);
+app.put('/api/documents/:documentId/status', authenticateToken, documentsAPI.updateStatus);
+app.delete('/api/documents/:documentId', authenticateToken, documentsAPI.delete);
+app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
+
+// Routes pour la réinitialisation de mot de passe
+app.post('/api/password-reset/request/:memberId', authenticateToken, passwordResetAPI.requestReset);
+app.get('/api/password-reset/validate/:token', passwordResetAPI.validateToken);
+app.post('/api/password-reset/reset/:token', passwordResetAPI.resetPassword);
+app.post('/api/password-reset/generate-temporary/:memberId', authenticateToken, passwordResetAPI.generateTemporaryPassword);

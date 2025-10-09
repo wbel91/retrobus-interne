@@ -26,7 +26,7 @@ const cards = [
   },
   {
     title: "Gérer les adhésions",
-    to: "/adhesion",
+    to: "/members",
     color: "blue.100",
   },
   {

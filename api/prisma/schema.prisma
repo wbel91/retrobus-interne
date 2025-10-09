@@ -127,3 +127,142 @@ model EventRegistration {
   @@index([participantEmail])
   @@index([helloAssoOrderId])
 }
+
+model Member {
+  id                String   @id @default(cuid())
+  memberNumber      String   @unique // Numéro d'adhérent (ex: 2025-001)
+  firstName         String
+  lastName          String
+  email             String   @unique
+  phone             String?
+  address           String?
+  city              String?
+  postalCode        String?
+  birthDate         DateTime?
+  membershipType    MembershipType @default(STANDARD)
+  membershipStatus  MembershipStatus @default(PENDING)
+  joinDate          DateTime @default(now())
+  renewalDate       DateTime
+  lastPaymentDate   DateTime?
+  paymentAmount     Float?
+  paymentMethod     String? // "cash", "check", "transfer", "helloasso"
+  
+  // Rôle et permissions
+  role              MemberRole @default(MEMBER)
+  
+  // Accès aux sites
+  hasExternalAccess Boolean  @default(false) // Accès site externe (newsletter, etc.)
+  hasInternalAccess Boolean  @default(false) // Accès MyRBE
+  internalPassword  String?  // Hash du mot de passe pour MyRBE
+  
+  // Informations spécifiques aux conducteurs
+  driverLicense            String?    // Type de permis (B, C, D, SPECIAL)
+  licenseExpiryDate        DateTime?  // Date d'expiration du permis
+  medicalCertificateDate   DateTime?  // Date de la visite médicale
+  emergencyContact         String?    // Contact d'urgence
+  emergencyPhone           String?    // Téléphone d'urgence
+  driverCertifications     String[]   // Certifications obtenues
+  vehicleAuthorizations    String[]   // Véhicules autorisés (parcs)
+  maxPassengers            Int?       // Nombre max de passagers autorisé
+  driverNotes              String?    // Notes spécifiques conducteur
+  
+  // Préférences
+  newsletter        Boolean  @default(true)
+  notifications     Boolean  @default(true)
+  
+  // Métadonnées
+  notes             String?  // Notes administratives
+  createdBy         String?  // Qui a créé le membre
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  documents         MemberDocument[] @relation("MemberDocuments")
+  passwordResets    PasswordReset[]  @relation("MemberPasswordResets")
+  
+  @@index([memberNumber])
+  @@index([email])
+  @@index([membershipStatus])
+  @@index([renewalDate])
+  @@index([role])
+  @@index([licenseExpiryDate])
+}
+
+model MemberDocument {
+  id            String         @id @default(cuid())
+  memberId      String
+  documentType  DocumentType
+  fileName      String         // Nom original du fichier
+  filePath      String         // Chemin de stockage
+  fileSize      Int            // Taille en octets
+  mimeType      String         // Type MIME du fichier
+  uploadedAt    DateTime       @default(now())
+  expiryDate    DateTime?      // Date d'expiration (pour permis, CNI)
+  status        DocumentStatus @default(PENDING)
+  notes         String?        // Notes administratives
+  uploadedBy    String?        // Qui a uploadé le document
+  
+  // Relation
+  member        Member         @relation("MemberDocuments", fields: [memberId], references: [id], onDelete: Cascade)
+  
+  @@index([memberId])
+  @@index([documentType])
+  @@index([status])
+  @@index([expiryDate])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  memberId  String
+  token     String   @unique // Token de réinitialisation
+  expiresAt DateTime // Expiration du token (24h)
+  usedAt    DateTime? // Date d'utilisation du token
+  createdAt DateTime @default(now())
+  requestedBy String? // Qui a demandé la réinitialisation
+  
+  // Relation
+  member    Member   @relation("MemberPasswordResets", fields: [memberId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([memberId])
+  @@index([expiresAt])
+}
+
+enum MembershipType {
+  STANDARD    // Adhésion standard
+  FAMILY      // Adhésion famille
+  STUDENT     // Adhésion étudiant
+  HONORARY    // Membre d'honneur
+  LIFETIME    // Adhésion à vie
+}
+
+enum MembershipStatus {
+  PENDING     // En attente de validation
+  ACTIVE      // Adhésion active
+  EXPIRED     // Adhésion expirée
+  SUSPENDED   // Suspendu
+  CANCELLED   // Annulé
+}
+
+enum MemberRole {
+  MEMBER      // Adhérent simple
+  DRIVER      // Conducteur habilité
+  ADMIN       // Administrateur système
+  BUREAU      // Membre du bureau
+}
+
+enum DocumentType {
+  DRIVING_LICENSE     // Permis de conduire
+  IDENTITY_CARD       // Carte d'identité
+  INSURANCE_RECORD    // Relevé d'informations d'assurance
+  MEMBERSHIP_FORM     // Bulletin d'adhésion
+  MEDICAL_CERTIFICATE // Certificat médical
+  OTHER               // Autre document
+}
+
+enum DocumentStatus {
+  PENDING     // En attente de validation
+  APPROVED    // Validé
+  REJECTED    // Rejeté
+  EXPIRED     // Expiré
+}
