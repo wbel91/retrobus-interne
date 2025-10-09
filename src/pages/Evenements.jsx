@@ -55,6 +55,24 @@ const EVENT_TEMPLATES = {
     },
     description: "Événement public avec inscription ouverte directement au public"
   },
+  private_outing: {
+    name: "Sortie Privée",
+    icon: FiEyeOff,
+    color: "yellow",
+    defaults: {
+      isVisible: true,                 // ← Visible sur le site public
+      allowPublicRegistration: false, // ← Pas d'inscription publique
+      requiresRegistration: false,    // ← Pas d'inscription requise
+      isFree: true,
+      adultPrice: null,
+      childPrice: null,
+      maxParticipants: null,
+      registrationDeadline: '',
+      registrationMethod: 'none',
+      status: 'PUBLISHED'
+    },
+    description: "Sortie visible publiquement mais réservée (pas d'inscription possible)"
+  },
   public_contact_required: {
     name: "Contact Association Requis",
     icon: FiEyeOff,
@@ -852,7 +870,12 @@ const Evenements = () => {
   return (
     <Box p={6}>
       <Flex justify="space-between" align="center" mb={6}>
-        <Heading>Gestion des Événements</Heading>
+        <VStack align="start" spacing={1}>
+          <Heading>📝 Création des Événements</Heading>
+          <Text fontSize="sm" color="gray.600">
+            Créez et configurez de nouveaux événements pour l'association
+          </Text>
+        </VStack>
         <HStack spacing={3}>
           <Button
             leftIcon={<FiEdit />}

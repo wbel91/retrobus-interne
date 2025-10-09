@@ -21,7 +21,7 @@ const cards = [
   },
   {
     title: "Gestion des Événements",
-    to: "/dashboard/evenements",
+    to: "/dashboard/events-management", // Route correcte vers EventsManagement
     color: "green.100",
   },
   {

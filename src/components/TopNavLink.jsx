@@ -18,25 +18,25 @@ export default function TopNavLink({ to, exact = false, children }) {
     <Link
       as={RouterLink}
       to={to}
-      fontWeight="600"
-      px={3}
-      py={1.5}
-      borderRadius="md"
+      color={isActive ? "var(--rbe-red)" : "gray.600"}
+      fontWeight={isActive ? "bold" : "normal"}
+      textDecoration="none"
       position="relative"
-      _hover={{ textDecoration: 'none', bg: 'blackAlpha.50' }}
-      bg={isActive ? 'blackAlpha.100' : 'transparent'}
-      aria-current={isActive ? 'page' : undefined}
-      _after={{
-        content: '""',
-        position: 'absolute',
-        left: '12%',
-        right: '12%',
-        bottom: '2px',
-        height: '2px',
-        borderRadius: '2px',
-        bg: isActive ? 'blue.500' : 'transparent',
-        transition: 'background .25s'
+      _hover={{
+        color: "var(--rbe-red)",
+        textDecoration: "none"
       }}
+      _after={isActive ? {
+        content: '""',
+        position: "absolute",
+        bottom: "-8px",
+        left: 0,
+        right: 0,
+        height: "2px",
+        bg: "var(--rbe-red)",
+        borderRadius: "1px"
+      } : {}}
+      aria-current={isActive ? "page" : undefined}
     >
       {children}
     </Link>

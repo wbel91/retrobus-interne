@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import { USERS } from './auth/users.js';
 import { documentsAPI, upload } from './documents.js';
 import { passwordResetAPI } from './password-reset.js';
+import { newsletterService } from './newsletter-service.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -780,6 +781,38 @@ app.get('/public/events/:id', async (req, res) => {
   }
 });
 
+// Ajoutons un nouvel endpoint après les événements publics existants
+app.get('/public/vehicles/:parc/events', async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { parc } = req.params;
+    
+    // Vérifier que le véhicule existe
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { parc },
+      select: { parc: true }
+    });
+    
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Véhicule introuvable' });
+    }
+    
+    // Récupérer les événements associés à ce véhicule
+    const events = await prisma.event.findMany({
+      where: { 
+        vehicleId: parc,
+        status: 'PUBLISHED'
+      },
+      orderBy: { date: 'asc' }
+    });
+    
+    res.json(events.map(transformEvent));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch vehicle events' });
+  }
+});
+
 // ---------- Newsletter (Prisma) ----------
 const transformSubscriber = (s) => ({
   id: s.id,
@@ -852,6 +885,78 @@ app.delete('/newsletter/:id', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// Statistiques newsletter
+app.get('/newsletter/stats', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const [total, confirmed, pending] = await Promise.all([
+      prisma.newsletterSubscriber.count(),
+      prisma.newsletterSubscriber.count({ where: { status: 'CONFIRMED' } }),
+      prisma.newsletterSubscriber.count({ where: { status: 'PENDING' } })
+    ]);
+    
+    res.json({ total, confirmed, pending });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Stats fetch failed' });
+  }
+});
+
+// Modifier le statut d'un abonné
+app.put('/newsletter/:id/status', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { status } = req.body;
+    if (!['CONFIRMED', 'PENDING'].includes(status)) {
+      return res.status(400).json({ error: 'Statut invalide' });
+    }
+    
+    const updated = await prisma.newsletterSubscriber.update({
+      where: { id: req.params.id },
+      data: { status }
+    });
+    
+    res.json(transformSubscriber(updated));
+  } catch (e) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Abonné non trouvé' });
+    console.error(e);
+    res.status(500).json({ error: 'Status update failed' });
+  }
+});
+
+// Export CSV des abonnés
+app.get('/newsletter/export', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { format = 'csv' } = req.query;
+    const subscribers = await prisma.newsletterSubscriber.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    if (format === 'csv') {
+      const csvData = subscribers.map(s => ({
+        Email: s.email,
+        Statut: s.status,
+        'Date inscription': s.createdAt.toISOString().split('T')[0]
+      }));
+      
+      const csvContent = [
+        Object.keys(csvData[0]).join(';'),
+        ...csvData.map(row => Object.values(row).join(';'))
+      ].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=newsletter-subscribers.csv');
+      res.send(csvContent);
+    } else {
+      res.json(subscribers.map(transformSubscriber));
+    }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 
@@ -1831,3 +1936,133 @@ app.post('/api/password-reset/request/:memberId', authenticateToken, passwordRes
 app.get('/api/password-reset/validate/:token', passwordResetAPI.validateToken);
 app.post('/api/password-reset/reset/:token', passwordResetAPI.resetPassword);
 app.post('/api/password-reset/generate-temporary/:memberId', authenticateToken, passwordResetAPI.generateTemporaryPassword);
+
+// ---------- Newsletter Campaigns ----------
+
+// Récupérer toutes les campagnes
+app.get('/newsletter/campaigns', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { status } = req.query;
+    const campaigns = await newsletterService.getCampaigns({ status });
+    res.json(campaigns);
+  } catch (e) {
+    console.error('Erreur récupération campagnes:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des campagnes' });
+  }
+});
+
+// Créer une nouvelle campagne
+app.post('/newsletter/campaigns', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { title, subject, content, scheduledAt } = req.body;
+    
+    if (!title || !subject || !content) {
+      return res.status(400).json({ error: 'Titre, sujet et contenu requis' });
+    }
+
+    const campaign = await newsletterService.createCampaign({
+      title,
+      subject, 
+      content,
+      scheduledAt,
+      createdBy: req.user?.id || 'admin'
+    });
+
+    res.status(201).json(campaign);
+  } catch (e) {
+    console.error('Erreur création campagne:', e);
+    res.status(500).json({ error: 'Erreur lors de la création de la campagne' });
+  }
+});
+
+// Récupérer une campagne spécifique
+app.get('/newsletter/campaigns/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const campaign = await newsletterService.getCampaignById(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campagne non trouvée' });
+    res.json(campaign);
+  } catch (e) {
+    console.error('Erreur récupération campagne:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération de la campagne' });
+  }
+});
+
+// Prévisualiser une campagne
+app.get('/newsletter/campaigns/:id/preview', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const preview = await newsletterService.previewCampaign(req.params.id);
+    res.json(preview);
+  } catch (e) {
+    console.error('Erreur prévisualisation:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Envoyer un email de test
+app.post('/newsletter/campaigns/:id/test', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email de test requis' });
+    }
+
+    await newsletterService.sendTestEmail(req.params.id, email);
+    res.json({ success: true, message: 'Email de test envoyé' });
+  } catch (e) {
+    console.error('Erreur envoi test:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Préparer l'envoi d'une campagne
+app.post('/newsletter/campaigns/:id/prepare', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const result = await newsletterService.prepareCampaignSend(req.params.id);
+    res.json(result);
+  } catch (e) {
+    console.error('Erreur préparation envoi:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Envoyer une campagne
+app.post('/newsletter/campaigns/:id/send', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const result = await newsletterService.sendCampaign(req.params.id);
+    res.json(result);
+  } catch (e) {
+    console.error('Erreur envoi campagne:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Récupérer les statistiques d'une campagne
+app.get('/newsletter/campaigns/:id/stats', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const stats = await newsletterService.getCampaignStats(req.params.id);
+    res.json(stats);
+  } catch (e) {
+    console.error('Erreur statistiques campagne:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
+  }
+});
+
+// Supprimer une campagne
+app.delete('/newsletter/campaigns/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    await newsletterService.deleteCampaign(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Erreur suppression campagne:', e);
+    res.status(500).json({ error: 'Erreur lors de la suppression de la campagne' });
+  }
+});
