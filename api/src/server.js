@@ -9,7 +9,6 @@ import QRCode from 'qrcode';
 import jwt from 'jsonwebtoken';
 import { USERS } from './auth/users.js';
 import { documentsAPI, upload } from './documents.js';
-import { passwordResetAPI } from './password-reset.js';
 import { newsletterService } from './newsletter-service.js';
 import bcrypt from 'bcrypt';
 
@@ -1999,12 +1998,6 @@ app.get('/api/documents/:documentId/download', authenticateToken, documentsAPI.d
 app.put('/api/documents/:documentId/status', authenticateToken, documentsAPI.updateStatus);
 app.delete('/api/documents/:documentId', authenticateToken, documentsAPI.delete);
 app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
-
-// Routes pour la réinitialisation de mot de passe
-app.post('/api/password-reset/request/:memberId', authenticateToken, passwordResetAPI.requestReset);
-app.get('/api/password-reset/validate/:token', passwordResetAPI.validateToken);
-app.post('/api/password-reset/reset/:token', passwordResetAPI.resetPassword);
-app.post('/api/password-reset/generate-temporary/:memberId', authenticateToken, passwordResetAPI.generateTemporaryPassword);
 
 // ---------- Newsletter Campaigns ----------
 
