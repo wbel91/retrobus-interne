@@ -1301,12 +1301,6 @@ app.put('/api/documents/:documentId/status', authenticateToken, documentsAPI.upd
 app.delete('/api/documents/:documentId', authenticateToken, documentsAPI.delete);
 app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
 
-// Routes pour la réinitialisation de mot de passe
-app.post('/api/password-reset/request/:memberId', authenticateToken, passwordResetAPI.requestReset);
-app.get('/api/password-reset/validate/:token', passwordResetAPI.validateToken);
-app.post('/api/password-reset/reset/:token', passwordResetAPI.resetPassword);
-app.post('/api/password-reset/generate-temporary/:memberId', authenticateToken, passwordResetAPI.generateTemporaryPassword);
-
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
