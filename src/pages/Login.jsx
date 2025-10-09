@@ -2,7 +2,7 @@
 import { Box, Button, Input, VStack, Text } from '@chakra-ui/react';
 import { useState } from 'react';
 import { useUser } from '../context/UserContext';
-import { login } from '../api/auth';
+import { login, memberLogin } from '../api/auth';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -20,7 +20,11 @@ export default function Login() {
     setLoading(true);
     setErr('');
     try {
-      const data = await login(username.trim().toLowerCase(), password);
+      const id = username.trim();
+      const looksLikeMatricule = /^\d{4}-\d{3}$/i.test(id) || id.includes('@');
+      const data = looksLikeMatricule
+        ? await memberLogin(id, password)
+        : await login(id.toLowerCase(), password);
       setToken(data.token);
       setUser(data.user);
       navigate('/dashboard');

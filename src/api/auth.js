@@ -46,3 +46,26 @@ export async function login(username, password) {
   
   return res.json();
 }
+
+// Export de l'API d'authentification
+export const authAPI = {
+  login,
+  USERS
+};
+
+// Connexion membre (matricule/email + mot de passe interne)
+export async function memberLogin(identifier, password) {
+  const base = import.meta.env.VITE_API_URL;
+  if (!base) throw new Error('API non configurée (VITE_API_URL manquante)');
+  const res = await fetch(`${base}/auth/member-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password })
+  });
+  if (!res.ok) {
+    let msg = 'Échec de connexion';
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}

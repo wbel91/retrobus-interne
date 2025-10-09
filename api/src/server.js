@@ -11,6 +11,7 @@ import { USERS } from './auth/users.js';
 import { documentsAPI, upload } from './documents.js';
 import { passwordResetAPI } from './password-reset.js';
 import { newsletterService } from './newsletter-service.js';
+import bcrypt from 'bcrypt';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -194,16 +195,94 @@ app.post('/auth/login', (req, res) => {
   });
 });
 
-// ---------- File upload setup ----------
-const galleryStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(process.cwd(), 'uploads', 'vehicles');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+// Member login using memberNumber or email + internalPassword
+app.post('/auth/member-login', async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { identifier, password } = req.body || {};
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'identifiant & mot de passe requis' });
+    }
+    const where = identifier.includes('@')
+      ? { email: identifier }
+      : { memberNumber: identifier };
+    const member = await prisma.member.findUnique({ where });
+    if (!member || !member.hasInternalAccess || !member.internalPassword) {
+      return res.status(401).json({ error: 'Identifiants invalides' });
+    }
+    const ok = await bcrypt.compare(password, member.internalPassword);
+    if (!ok) return res.status(401).json({ error: 'Identifiants invalides' });
+    const token = issueToken({
+      memberId: member.id,
+      memberNumber: member.memberNumber,
+      prenom: member.firstName,
+      nom: member.lastName,
+      type: 'member'
+    });
+    res.json({
+      token,
+      user: {
+        username: member.memberNumber,
+        prenom: member.firstName,
+        nom: member.lastName,
+        roles: ['MEMBER'],
+        memberId: member.id
+      }
+    });
+  } catch (e) {
+    console.error('Erreur member-login:', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
-const uploadGallery = multer({ storage: galleryStorage });
+
+// Return current member profile (for member tokens)
+app.get('/api/me', authenticateToken, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const memberId = req.user?.memberId;
+    if (!memberId) return res.status(400).json({ error: 'Non membre' });
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: {
+        id: true,
+        memberNumber: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        address: true,
+        city: true,
+        postalCode: true,
+        membershipType: true,
+        membershipStatus: true,
+        joinDate: true,
+        renewalDate: true,
+        lastPaymentDate: true,
+        paymentAmount: true,
+        paymentMethod: true,
+        role: true,
+        hasInternalAccess: true,
+        hasExternalAccess: true,
+        notifications: true,
+        newsletter: true
+      }
+    });
+    if (!member) return res.status(404).json({ error: 'Membre introuvable' });
+    res.json(member);
+  } catch (e) {
+    console.error('Erreur /api/me:', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ---------- File upload setup ----------
+const galleryStorage = multer.memoryStorage(); // Stocker en mémoire au lieu du disque
+const uploadGallery = multer({ 
+  storage: galleryStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // Limite à 5MB par fichier
+  }
+});
 
 // ---------- Vehicle CRUD ----------
 app.get('/vehicles', requireAuth, async (_req, res) => {
@@ -368,8 +447,6 @@ app.delete('/vehicles/:parc', requireAuth, async (req, res) => {
 });
 
 // ---------- Galerie upload ----------
-app.use('/media/vehicles', express.static(path.join(process.cwd(), 'uploads', 'vehicles')));
-
 app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 10), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
@@ -379,13 +456,21 @@ app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 1
 
     const existingGallery = parseJsonField(v.gallery);
     const existing = Array.isArray(existingGallery) ? existingGallery : [];
-    const added = (req.files || []).map(f => `/media/vehicles/${f.filename}`);
+    
+    // Convertir les fichiers en base64
+    const added = (req.files || []).map(file => {
+      const base64 = file.buffer.toString('base64');
+      const mimeType = file.mimetype;
+      return `data:${mimeType};base64,${base64}`;
+    });
+    
     const gallery = existing.concat(added);
 
     const updated = await prisma.vehicle.update({
       where: { parc },
       data: { gallery: stringifyJsonField(gallery) }
     });
+    
     res.json({ gallery: parseJsonField(updated.gallery) });
   } catch (e) {
     console.error(e);
@@ -398,41 +483,24 @@ app.post('/vehicles/:parc/background', requireAuth, uploadGallery.single('image'
   try {
     const { parc } = req.params;
     if (!req.file) return res.status(400).json({ error: 'Fichier manquant' });
+    
     const v = await prisma.vehicle.findUnique({ where: { parc } });
     if (!v) return res.status(404).json({ error: 'Véhicule introuvable' });
 
+    // Convertir en base64
+    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
     const updated = await prisma.vehicle.update({
       where: { parc },
-      data: { backgroundImage: `/media/vehicles/${req.file.filename}` }
+      data: { backgroundImage: dataUrl }
     });
+    
     res.json({ backgroundImage: updated.backgroundImage });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Upload background failed' });
-  }
-});
-
-app.delete('/vehicles/:parc/gallery', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { parc } = req.params;
-    const { image } = req.body || {};
-    if (!image) return res.status(400).json({ error: 'image manquante' });
-    const v = await prisma.vehicle.findUnique({ where: { parc } });
-    if (!v) return res.status(404).json({ error: 'Véhicule introuvable' });
-
-    let galleryArr = [];
-    try { galleryArr = JSON.parse(v.gallery || '[]'); } catch {}
-    const filtered = galleryArr.filter(g => g !== image);
-
-    await prisma.vehicle.update({
-      where: { parc },
-      data: { gallery: JSON.stringify(filtered) }
-    });
-    res.json({ gallery: filtered });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Delete gallery image failed' });
   }
 });
 
@@ -1574,6 +1642,7 @@ app.get('/members', requireAuth, async (req, res) => {
           phone: true,
           membershipType: true,
           membershipStatus: true,
+          role: true,
           joinDate: true,
           renewalDate: true,
           hasExternalAccess: true,

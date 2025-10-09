@@ -19,5 +19,27 @@ export const membersAPI = {
   delete: (id) => apiClient.delete(`/api/members/${id}`),
   
   // Récupérer les statistiques
-  getStats: () => apiClient.get('/api/members/stats')
+  getStats: async () => {
+    try {
+      return await apiClient.get('/api/members/stats');
+    } catch (e) {
+      // En production, certains déploiements peuvent ne pas exposer cette route.
+      // Si 404, retourner des stats vides pour éviter les erreurs UI.
+      if (e && typeof e.message === 'string' && e.message.includes('404')) {
+        return {
+          totalMembers: 0,
+          activeMembers: 0,
+          expiredMembers: 0,
+          pendingMembers: 0,
+          membersWithInternalAccess: 0,
+          recentJoins: 0,
+          drivers: 0
+        };
+      }
+      throw e;
+    }
+  },
+
+  // Profil du membre courant
+  getMe: () => apiClient.get('/api/me')
 };

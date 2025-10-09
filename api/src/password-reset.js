@@ -1,13 +1,18 @@
-import { PrismaClient } from '@prisma/client';
+﻿import { PrismaClient } from '@prisma/client';
+          emailSent = true;
+        } catch (mailErr) {
+          console.warn('Envoi email reset échoué ou SMTP absent:', mailErr?.message || mailErr);
+        }
+      }
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import nodemailer from 'nodemailer';
 
 const prisma = new PrismaClient();
 
-// Configuration email (à adapter selon votre service)
+// Configuration email (Ã  adapter selon votre service)
 const transporter = nodemailer.createTransport({
-  // Configuration à personnaliser
+  // Configuration Ã  personnaliser
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: process.env.SMTP_PORT || 587,
   secure: false,
@@ -17,14 +22,19 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// DÃ©tection simple de configuration SMTP
+const isEmailConfigured = () => {
+  return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+};
+
 export const passwordResetAPI = {
-  // Demander une réinitialisation de mot de passe
+  // Demander une rÃ©initialisation de mot de passe
   async requestReset(req, res) {
     try {
       const { memberId } = req.params;
       const requestedBy = req.user?.id || 'admin';
       
-      // Vérifier que le membre existe et a accès à l'intranet
+      // VÃ©rifier que le membre existe et a accÃ¨s Ã  l'intranet
       const member = await prisma.member.findUnique({
         where: { id: memberId }
       });
@@ -34,7 +44,7 @@ export const passwordResetAPI = {
       }
 
       if (!member.hasInternalAccess) {
-        return res.status(400).json({ error: 'Ce membre n\'a pas accès à l\'intranet' });
+        return res.status(400).json({ error: 'Ce membre n\'a pas accÃ¨s Ã  l\'intranet' });
       }
 
       // Invalider les anciens tokens
@@ -48,7 +58,7 @@ export const passwordResetAPI = {
         }
       });
 
-      // Générer un nouveau token
+      // GÃ©nÃ©rer un nouveau token
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 24); // Expire dans 24h
@@ -62,17 +72,20 @@ export const passwordResetAPI = {
         }
       });
 
-      // Envoyer l'email de réinitialisation
+      // Envoyer l'email de rÃ©initialisation
       const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+      let emailSent = false;
+      if (isEmailConfigured()) {
+        try {
       
       await transporter.sendMail({
         from: process.env.SMTP_FROM || 'noreply@retrobus-essonne.fr',
         to: member.email,
-        subject: '🔐 Réinitialisation de votre mot de passe MyRBE',
+        subject: 'ðŸ” RÃ©initialisation de votre mot de passe MyRBE',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #be003c, #e40045); color: white; padding: 30px; text-align: center;">
-              <h1 style="margin: 0; font-size: 28px;">🚌 RétroBus Essonne</h1>
+              <h1 style="margin: 0; font-size: 28px;">ðŸšŒ RÃ©troBus Essonne</h1>
               <p style="margin: 10px 0 0; font-size: 16px;">Votre plateforme MyRBE</p>
             </div>
             
@@ -80,21 +93,21 @@ export const passwordResetAPI = {
               <h2 style="color: #333; margin-bottom: 20px;">Bonjour ${member.firstName},</h2>
               
               <p style="color: #666; line-height: 1.6; margin-bottom: 25px;">
-                Une demande de réinitialisation de mot de passe a été effectuée pour votre compte MyRBE.
-                Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe.
+                Une demande de rÃ©initialisation de mot de passe a Ã©tÃ© effectuÃ©e pour votre compte MyRBE.
+                Cliquez sur le bouton ci-dessous pour crÃ©er un nouveau mot de passe.
               </p>
               
               <div style="text-align: center; margin: 30px 0;">
                 <a href="${resetUrl}" 
                    style="background: #be003c; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                  🔐 Réinitialiser mon mot de passe
+                  ðŸ” RÃ©initialiser mon mot de passe
                 </a>
               </div>
               
               <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 25px 0;">
                 <p style="margin: 0; color: #856404; font-size: 14px;">
-                  <strong>⚠️ Important :</strong> Ce lien est valable pendant 24 heures seulement.
-                  Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
+                  <strong>âš ï¸ Important :</strong> Ce lien est valable pendant 24 heures seulement.
+                  Si vous n'avez pas demandÃ© cette rÃ©initialisation, ignorez cet email.
                 </p>
               </div>
               
@@ -105,24 +118,26 @@ export const passwordResetAPI = {
             </div>
             
             <div style="background: #333; color: #ccc; padding: 20px; text-align: center; font-size: 12px;">
-              <p style="margin: 0;">© 2025 RétroBus Essonne - Association loi 1901</p>
-              <p style="margin: 5px 0 0;">Cet email a été envoyé automatiquement, merci de ne pas y répondre.</p>
+              <p style="margin: 0;">Â© 2025 RÃ©troBus Essonne - Association loi 1901</p>
+              <p style="margin: 5px 0 0;">Cet email a Ã©tÃ© envoyÃ© automatiquement, merci de ne pas y rÃ©pondre.</p>
             </div>
           </div>
         `
       });
+          emailSent = true;
+        } catch (mailErr) {
+          console.warn('Envoi email reset échoué ou SMTP absent:', mailErr?.message || mailErr);
+        }
+      }
 
       res.json({ 
-        message: 'Email de réinitialisation envoyé',
-        sentTo: member.email 
+        message: 'Demande de rǸinitialisation traitǸe',
+        sentTo: member.email,
+        emailSent
       });
-    } catch (error) {
-      console.error('Erreur demande réinitialisation:', error);
-      res.status(500).json({ error: 'Erreur serveur' });
-    }
   },
 
-  // Valider un token de réinitialisation
+  // Valider un token de rÃ©initialisation
   async validateToken(req, res) {
     try {
       const { token } = req.params;
@@ -146,11 +161,11 @@ export const passwordResetAPI = {
       }
 
       if (passwordReset.usedAt) {
-        return res.status(400).json({ error: 'Token déjà utilisé' });
+        return res.status(400).json({ error: 'Token dÃ©jÃ  utilisÃ©' });
       }
 
       if (new Date() > passwordReset.expiresAt) {
-        return res.status(400).json({ error: 'Token expiré' });
+        return res.status(400).json({ error: 'Token expirÃ©' });
       }
       
       res.json({ 
@@ -163,14 +178,14 @@ export const passwordResetAPI = {
     }
   },
 
-  // Réinitialiser le mot de passe
+  // RÃ©initialiser le mot de passe
   async resetPassword(req, res) {
     try {
       const { token } = req.params;
       const { newPassword } = req.body;
       
       if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
+        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractÃ¨res' });
       }
 
       const passwordReset = await prisma.passwordReset.findUnique({
@@ -179,13 +194,13 @@ export const passwordResetAPI = {
       });
       
       if (!passwordReset || passwordReset.usedAt || new Date() > passwordReset.expiresAt) {
-        return res.status(400).json({ error: 'Token invalide ou expiré' });
+        return res.status(400).json({ error: 'Token invalide ou expirÃ©' });
       }
 
       // Hasher le nouveau mot de passe
       const hashedPassword = await bcrypt.hash(newPassword, 12);
 
-      // Mettre à jour le mot de passe et marquer le token comme utilisé
+      // Mettre Ã  jour le mot de passe et marquer le token comme utilisÃ©
       await prisma.$transaction([
         prisma.member.update({
           where: { id: passwordReset.memberId },
@@ -197,14 +212,14 @@ export const passwordResetAPI = {
         })
       ]);
 
-      res.json({ message: 'Mot de passe mis à jour avec succès' });
+      res.json({ message: 'Mot de passe mis Ã  jour avec succÃ¨s' });
     } catch (error) {
-      console.error('Erreur réinitialisation mot de passe:', error);
+      console.error('Erreur rÃ©initialisation mot de passe:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },
 
-  // Générer un mot de passe temporaire pour nouveau membre
+  // GÃ©nÃ©rer un mot de passe temporaire pour nouveau membre
   async generateTemporaryPassword(req, res) {
     try {
       const { memberId } = req.params;
@@ -217,11 +232,11 @@ export const passwordResetAPI = {
         return res.status(404).json({ error: 'Membre introuvable' });
       }
 
-      // Générer un mot de passe temporaire
+      // GÃ©nÃ©rer un mot de passe temporaire
       const tempPassword = `RBE${member.memberNumber.slice(-3)}${Math.random().toString(36).slice(-4).toUpperCase()}`;
       const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
-      // Mettre à jour le membre avec accès intranet et mot de passe
+      // Mettre Ã  jour le membre avec accÃ¨s intranet et mot de passe
       await prisma.member.update({
         where: { id: memberId },
         data: {
@@ -231,27 +246,30 @@ export const passwordResetAPI = {
       });
 
       // Envoyer l'email de bienvenue avec les identifiants
+      let emailSent = false;
+      if (isEmailConfigured()) {
+        try {
       await transporter.sendMail({
         from: process.env.SMTP_FROM || 'noreply@retrobus-essonne.fr',
         to: member.email,
-        subject: '🎉 Bienvenue sur MyRBE - Vos identifiants d\'accès',
+        subject: 'ðŸŽ‰ Bienvenue sur MyRBE - Vos identifiants d\'accÃ¨s',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #be003c, #e40045); color: white; padding: 30px; text-align: center;">
-              <h1 style="margin: 0; font-size: 28px;">🚌 Bienvenue sur MyRBE !</h1>
-              <p style="margin: 10px 0 0; font-size: 16px;">Votre espace adhérent RétroBus Essonne</p>
+              <h1 style="margin: 0; font-size: 28px;">ðŸšŒ Bienvenue sur MyRBE !</h1>
+              <p style="margin: 10px 0 0; font-size: 16px;">Votre espace adhÃ©rent RÃ©troBus Essonne</p>
             </div>
             
             <div style="padding: 40px 30px; background: #f9f9f9;">
               <h2 style="color: #333; margin-bottom: 20px;">Bonjour ${member.firstName},</h2>
               
               <p style="color: #666; line-height: 1.6; margin-bottom: 25px;">
-                Votre adhésion a été validée ! Vous avez maintenant accès à votre espace personnel MyRBE 
-                où vous pourrez consulter vos informations, gérer vos inscriptions aux événements et bien plus encore.
+                Votre adhÃ©sion a Ã©tÃ© validÃ©e ! Vous avez maintenant accÃ¨s Ã  votre espace personnel MyRBE 
+                oÃ¹ vous pourrez consulter vos informations, gÃ©rer vos inscriptions aux Ã©vÃ©nements et bien plus encore.
               </p>
               
               <div style="background: white; border: 2px solid #be003c; padding: 25px; border-radius: 10px; margin: 30px 0;">
-                <h3 style="color: #be003c; margin-top: 0;">🔑 Vos identifiants de connexion :</h3>
+                <h3 style="color: #be003c; margin-top: 0;">ðŸ”‘ Vos identifiants de connexion :</h3>
                 <p style="margin: 15px 0;"><strong>Email :</strong> ${member.email}</p>
                 <p style="margin: 15px 0;"><strong>Mot de passe temporaire :</strong> <code style="background: #f8f9fa; padding: 5px 10px; border-radius: 3px; font-family: monospace; font-size: 16px; color: #e83e8c;">${tempPassword}</code></p>
               </div>
@@ -259,39 +277,45 @@ export const passwordResetAPI = {
               <div style="text-align: center; margin: 30px 0;">
                 <a href="${process.env.FRONTEND_URL}/login" 
                    style="background: #be003c; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                  🚀 Accéder à MyRBE
+                  ðŸš€ AccÃ©der Ã  MyRBE
                 </a>
               </div>
               
               <div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 25px 0;">
                 <p style="margin: 0; color: #0c5460; font-size: 14px;">
-                  <strong>🛡️ Sécurité :</strong> Nous vous recommandons de changer ce mot de passe 
-                  lors de votre première connexion pour garantir la sécurité de votre compte.
+                  <strong>ðŸ›¡ï¸ SÃ©curitÃ© :</strong> Nous vous recommandons de changer ce mot de passe 
+                  lors de votre premiÃ¨re connexion pour garantir la sÃ©curitÃ© de votre compte.
                 </p>
               </div>
               
               <p style="color: #666; line-height: 1.6;">
-                Si vous avez des questions ou rencontrez des difficultés, n'hésitez pas à nous contacter.
+                Si vous avez des questions ou rencontrez des difficultÃ©s, n'hÃ©sitez pas Ã  nous contacter.
                 <br><br>
-                Bienvenue dans la famille RétroBus Essonne ! 🎉
+                Bienvenue dans la famille RÃ©troBus Essonne ! ðŸŽ‰
               </p>
             </div>
             
             <div style="background: #333; color: #ccc; padding: 20px; text-align: center; font-size: 12px;">
-              <p style="margin: 0;">© 2025 RétroBus Essonne - Association loi 1901</p>
-              <p style="margin: 5px 0 0;">Cet email a été envoyé automatiquement, merci de ne pas y répondre.</p>
+              <p style="margin: 0;">Â© 2025 RÃ©troBus Essonne - Association loi 1901</p>
+              <p style="margin: 5px 0 0;">Cet email a Ã©tÃ© envoyÃ© automatiquement, merci de ne pas y rÃ©pondre.</p>
             </div>
           </div>
         `
       });
+          emailSent = true;
+        } catch (mailErr) {
+          console.warn('Envoi email acc�s �chou� ou SMTP absent:', mailErr?.message || mailErr);
+        }
+      }
 
       res.json({ 
-        message: 'Accès créé et email envoyé',
+        message: 'Acces cree' ,
         temporaryPassword: tempPassword,
-        sentTo: member.email
+        sentTo: member.email,
+        emailSent
       });
     } catch (error) {
-      console.error('Erreur création accès temporaire:', error);
+      console.error('Erreur crÃ©ation accÃ¨s temporaire:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   }

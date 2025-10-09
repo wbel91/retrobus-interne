@@ -1,23 +1,4 @@
-const express = require("express");
-const cors = require("cors");
-const eventsRouter = require("./events");
-const vehiclesRouter = require("./vehicles");
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Routes API
-app.use("/api/events", eventsRouter);
-app.use("/api/vehicles", vehiclesRouter);
-
-// Route de test
-app.get("/api", (req, res) => res.json({ status: "API RBE OK" }));
-
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`API RBE running on port ${PORT}`));
-
-// Export de toutes les API
+// Export de toutes les API clients
 export { apiClient, API_BASE_URL } from './config.js';
 export { authAPI } from './auth.js';
 export { eventsAPI } from './events.js';
@@ -27,6 +8,16 @@ export { documentsAPI } from './documents.js';
 export { newsletterAPI } from './newsletter.js';
 export { myRBEAPI } from './myrbe.js';
 export { flashAPI } from './flash.js';
+
+// Import des API pour l'export par défaut
+import { authAPI } from './auth.js';
+import { eventsAPI } from './events.js';
+import { vehiculesAPI } from './vehicles.js';
+import { membersAPI } from './members.js';
+import { documentsAPI } from './documents.js';
+import { newsletterAPI } from './newsletter.js';
+import { myRBEAPI } from './myrbe.js';
+import { flashAPI } from './flash.js';
 
 // Export par défaut de toutes les API
 export default {

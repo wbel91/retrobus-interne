@@ -20,6 +20,7 @@ import {
 } from 'react-icons/fi';
 import { membersAPI } from '../api/members.js';
 import { documentsAPI } from '../api/documents.js';
+import { API_BASE_URL } from '../api/config.js';
 
 const MEMBERSHIP_TYPES = {
   STANDARD: 'Standard',
@@ -82,6 +83,25 @@ const DOCUMENT_STATUS = {
   EXPIRED: { label: 'Expiré', color: 'gray', icon: FiAlertCircle }
 };
 
+const IT_ROLES = [
+  { value: 'ADMIN', label: 'Administrateur' },
+  { value: 'STAFF', label: 'Staff' },
+  { value: 'USER', label: 'Utilisateur' },
+  { value: 'GUEST', label: 'Invité' }
+];
+
+const POSTES = [
+  'Président',
+  'Vice-Président',
+  'Trésorier',
+  'Secrétaire',
+  'Responsable événement',
+  'Responsable communication',
+  'Membre actif',
+  'Bénévole',
+  'Autre'
+];
+
 const Members = () => {
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -129,7 +149,9 @@ const Members = () => {
     driverCertifications: [],
     vehicleAuthorizations: [],
     maxPassengers: '',
-    driverNotes: ''
+    driverNotes: '',
+    itRole: 'USER',
+    poste: ''
   });
 
   const fetchMembers = useCallback(async () => {
@@ -159,7 +181,10 @@ const Members = () => {
       const data = await membersAPI.getStats();
       setStats(data);
     } catch (e) {
-      console.error('Erreur chargement statistiques:', e);
+      // Ignorer les 404 si la route n'est pas disponible sur l'instance déployée
+      if (!(e && typeof e.message === 'string' && e.message.includes('404'))) {
+        console.error('Erreur chargement statistiques:', e);
+      }
     }
   }, []);
 
@@ -206,7 +231,9 @@ const Members = () => {
       driverCertifications: [],
       vehicleAuthorizations: [],
       maxPassengers: '',
-      driverNotes: ''
+      driverNotes: '',
+      itRole: 'USER',
+      poste: ''
     });
     setMemberDocuments([]);
   };
@@ -246,7 +273,9 @@ const Members = () => {
       driverCertifications: member.driverCertifications || [],
       vehicleAuthorizations: member.vehicleAuthorizations || [],
       maxPassengers: member.maxPassengers || '',
-      driverNotes: member.driverNotes || ''
+      driverNotes: member.driverNotes || '',
+      itRole: member.itRole || 'USER',
+      poste: member.poste || ''
     });
     
     // Charger les documents du membre
@@ -363,7 +392,7 @@ const Members = () => {
       formDataUpload.append('expiryDate', documentUpload.expiryDate);
       formDataUpload.append('notes', documentUpload.notes);
 
-      const response = await fetch(`/api/documents/member/${editingMember.id}/upload`, {
+      const response = await fetch(`${API_BASE_URL}/api/documents/member/${editingMember.id}/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -426,7 +455,8 @@ const Members = () => {
 
   const handlePasswordReset = async (member) => {
     try {
-      const response = await fetch(`/api/password-reset/request/${member.id}`, {
+      // Utiliser l'API base configurée pour éviter les 404 d'origine
+      const response = await fetch(`${API_BASE_URL}/api/password-reset/request/${member.id}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -435,10 +465,13 @@ const Members = () => {
 
       if (response.ok) {
         const data = await response.json();
+        const msg = data.emailSent === false
+          ? `Demande traitée, mais email non envoyé (SMTP non configuré).`
+          : `Email de réinitialisation envoyé à ${data.sentTo}`;
         toast({
           status: "success",
-          title: "Email envoyé",
-          description: `Email de réinitialisation envoyé à ${data.sentTo}`
+          title: "Réinitialisation",
+          description: msg
         });
       }
     } catch (error) {
@@ -452,7 +485,8 @@ const Members = () => {
 
   const handleCreateAccess = async (member) => {
     try {
-      const response = await fetch(`/api/password-reset/generate-temporary/${member.id}`, {
+      // Utiliser l'API base configurée pour éviter les 404 d'origine
+      const response = await fetch(`${API_BASE_URL}/api/password-reset/generate-temporary/${member.id}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -461,12 +495,20 @@ const Members = () => {
 
       if (response.ok) {
         const data = await response.json();
+        const sentMsg = data.emailSent === false
+          ? `Accès créé. Email non envoyé. MDP: ${data.temporaryPassword || ''}`
+          : `Mot de passe temporaire envoyé à ${data.sentTo}`;
         toast({
           status: "success",
           title: "Accès créé",
-          description: `Mot de passe temporaire envoyé à ${data.sentTo}`
+          description: sentMsg
         });
-        
+        try {
+          if (data.temporaryPassword) {
+            await navigator.clipboard.writeText(data.temporaryPassword);
+            toast({ status: 'info', title: 'MDP copié', description: 'Le mot de passe temporaire a été copié dans le presse-papiers.' });
+          }
+        } catch {}
         await fetchMembers();
       }
     } catch (error) {
@@ -476,6 +518,29 @@ const Members = () => {
         description: "Impossible de créer l'accès."
       });
     }
+  };
+
+  const assignMemberToRole = (roleId, member, itRole = 'USER', poste = '') => {
+    setPresentMembers(prev =>
+      prev.map(m =>
+        m.id === roleId
+          ? {
+              ...m,
+              name: `${member.firstName} ${member.lastName}`,
+              memberInfo: member,
+              assignedMemberId: member.id,
+              itRole,
+              poste
+            }
+          : m
+      )
+    );
+    toast({
+      title: "Membre assigné",
+      description: `${member.firstName} ${member.lastName} assigné au rôle`,
+      status: "success",
+      duration: 2000
+    });
   };
 
   const getStatusBadge = (status) => {
@@ -697,6 +762,8 @@ const Members = () => {
                     <Th>Statut</Th>
                     <Th>Renouvellement</Th>
                     <Th>Accès</Th>
+                    <Th>Rôle IT</Th>
+                    <Th>Poste</Th>
                     <Th>Actions</Th>
                   </Tr>
                 </Thead>
@@ -750,6 +817,8 @@ const Members = () => {
                           )}
                         </HStack>
                       </Td>
+                      <Td>{IT_ROLES.find(r => r.value === member.itRole)?.label || '-'}</Td>
+                      <Td>{member.poste || '-'}</Td>
                       <Td>
                         <ButtonGroup size="sm" spacing={1}>
                           <IconButton
@@ -869,6 +938,18 @@ const Members = () => {
                             ))}
                           </Select>
                         </FormControl>
+
+                        <FormControl>
+                          <FormLabel>Rôle informatique</FormLabel>
+                          <Select
+                            value={formData.itRole}
+                            onChange={e => setFormData(prev => ({ ...prev, itRole: e.target.value }))}
+                          >
+                            {IT_ROLES.map(r => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </Select>
+                        </FormControl>
                       </SimpleGrid>
 
                       {/* Adresse */}
@@ -898,6 +979,22 @@ const Members = () => {
                             onChange={(e) => setFormData(prev => ({ ...prev, postalCode: e.target.value }))}
                             placeholder="75001"
                           />
+                        </FormControl>
+                      </SimpleGrid>
+
+                      {/* Poste/Fonction */}
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={4}>
+                        <FormControl>
+                          <FormLabel>Poste/Fonction</FormLabel>
+                          <Select
+                            value={formData.poste}
+                            onChange={e => setFormData(prev => ({ ...prev, poste: e.target.value }))}
+                            placeholder="Sélectionner le poste"
+                          >
+                            {POSTES.map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </Select>
                         </FormControl>
                       </SimpleGrid>
                     </Box>

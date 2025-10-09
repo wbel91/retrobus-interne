@@ -1,0 +1,10 @@
+{
+  "models": [
+    {
+      "title": "GPT-4 Turbo",
+      "provider": "openai",
+      "model": "gpt-4-turbo",
+      "apiKey": "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"
+    }
+  ]
+}
