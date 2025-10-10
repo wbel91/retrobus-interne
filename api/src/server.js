@@ -48,6 +48,7 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+console.log('[BOOT] CORS OPEN: global CORS middleware enabled');
 
 app.use(cors({
   origin: (origin, cb) => {
@@ -1420,6 +1421,19 @@ app.listen(PORT, () => {
 });
 
 export default app;
+
+// Global error handler to ensure CORS headers on errors
+app.use((err, req, res, _next) => {
+  try {
+    const origin = req.headers?.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type,Authorization');
+  } catch {}
+  const status = err?.status || err?.statusCode || 500;
+  res.status(status).json({ error: err?.message || 'Server error' });
+});
 
 // ---------- Inscriptions et billets ----------
 
