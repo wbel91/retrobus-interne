@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Config
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // ou plus si besoin
 app.use(cors({
   origin: (origin, cb) => {
     const allowed = [
@@ -29,8 +29,6 @@ app.use(cors({
       'https://retrobus-interne.fr',
       'https://www.retrobus-interne.fr',
       'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
-      'https://retrobus-essonne.fr',
-      'https://www.retrobus-essonne.fr'
     ];
     console.log('🌍 CORS origin:', origin); // DEBUG
     if (!origin || allowed.includes(origin)) return cb(null, true);
