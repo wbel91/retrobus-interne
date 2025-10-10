@@ -502,45 +502,37 @@ app.post('/vehicles/:parc/background', requireAuth, uploadGallery.single('image'
 });
 
 // ---------- Endpoints publics (lecture seule) ----------
-app.get('/public/vehicles', async (_req, res) => {
+app.get('/public/vehicles/:parc?', async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const vehicles = await prisma.vehicle.findMany({
-      select: {
-        parc: true, type: true, modele: true, marque: true, subtitle: true,
-        immat: true, etat: true, miseEnCirculation: true, energie: true,
-        description: true, history: true,
-        caracteristiques: true, gallery: true,
-        backgroundImage: true, backgroundPosition: true
-      }
-    });
-    const transformedVehicles = vehicles.map(transformVehicle);
-    res.json(transformedVehicles);
+    if (req.params.parc) {
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { parc: req.params.parc },
+        select: {
+          parc: true, type: true, modele: true, marque: true, subtitle: true,
+          immat: true, etat: true, miseEnCirculation: true, energie: true,
+          description: true, history: true,
+          caracteristiques: true, gallery: true,
+          backgroundImage: true, backgroundPosition: true
+        }
+      });
+      if (!vehicle) return res.status(404).json({ error: 'Not found' });
+      return res.json(transformVehicle(vehicle));
+    } else {
+      const vehicles = await prisma.vehicle.findMany({
+        select: {
+          parc: true, type: true, modele: true, marque: true, subtitle: true,
+          immat: true, etat: true, miseEnCirculation: true, energie: true,
+          description: true, history: true,
+          caracteristiques: true, gallery: true,
+          backgroundImage: true, backgroundPosition: true
+        }
+      });
+      return res.json(vehicles.map(transformVehicle));
+    }
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Failed to fetch public vehicles' });
-  }
-});
-
-app.get('/public/vehicles/:parc', async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { parc } = req.params;
-    const vehicle = await prisma.vehicle.findUnique({
-      where: { parc },
-      select: {
-        parc: true, type: true, modele: true, marque: true, subtitle: true,
-        immat: true, etat: true, miseEnCirculation: true, energie: true,
-        description: true, history: true,
-        caracteristiques: true, gallery: true,
-        backgroundImage: true, backgroundPosition: true
-      }
-    });
-    if (!vehicle) return res.status(404).json({ error: 'Véhicule introuvable' });
-    res.json(transformVehicle(vehicle));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch public vehicle' });
+    res.status(500).json({ error: 'Failed to fetch public vehicle(s)' });
   }
 });
 
