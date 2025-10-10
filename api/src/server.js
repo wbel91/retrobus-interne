@@ -13,6 +13,8 @@ import { newsletterService } from './newsletter-service.js';
 import bcrypt from 'bcrypt';
 
 const app = express();
+// Server port configuration
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set("trust proxy", 1); // important sur Railway derrière proxy
 
 const allowedOrigins = [
