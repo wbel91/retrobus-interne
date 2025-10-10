@@ -46,8 +46,6 @@ app.use(cors({
   optionsSuccessStatus: 204,
 }));
 
-// Préflight OPTIONS OK partout (évite 403 sur méthodes/headers custom)
-app.options("*", cors());
 
 let prisma;
 try {
