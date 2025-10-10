@@ -50,6 +50,33 @@ app.use(cors({
   optionsSuccessStatus: 204,
 }));
 
+// Health endpoints for platform checks
+app.get('/health', async (_req, res) => {
+  let db = 'down';
+  if (prisma) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      db = 'ok';
+    } catch {
+      db = 'error';
+    }
+  }
+  res.json({ status: 'ok', port: PORT, db });
+});
+
+app.get('/public/health', async (_req, res) => {
+  let db = 'down';
+  if (prisma) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      db = 'ok';
+    } catch {
+      db = 'error';
+    }
+  }
+  res.json({ status: 'ok', port: PORT, db });
+});
+
 
 let prisma;
 try {
