@@ -69,7 +69,7 @@ const EventsManagement = () => {
   const [newStop, setNewStop] = useState({ time: '', name: '', address: '' });
   const { isOpen: isMapOpen, onOpen: onMapOpen, onClose: onMapClose } = useDisclosure();
 
-  const updateStop = (index, field, value) => {
+  const routeFormUpdateStop = (index, field, value) => {
     setRouteForm(prev => {
       const current = Array.isArray(prev.stops) ? prev.stops : [];
       const next = [...current];
@@ -78,7 +78,7 @@ const EventsManagement = () => {
     });
   };
 
-  const removeStop = (index) => {
+  const routeFormRemoveStop = (index) => {
     setRouteForm(prev => {
       const current = Array.isArray(prev.stops) ? prev.stops : [];
       const next = current.filter((_, i) => i !== index);
@@ -86,7 +86,7 @@ const EventsManagement = () => {
     });
   };
 
-  const addStop = () => {
+  const routeFormAddStop = () => {
     if (!newStop?.name || !newStop?.time) return;
     setRouteForm(prev => ({
       ...prev,
@@ -1745,7 +1745,7 @@ const EventsManagement = () => {
                             <HStack spacing={2} w="100%">
                               <Input
                                 value={stop.time}
-                                onChange={(e) => updateStop(index, 'time', e.target.value)}
+                                onChange={(e) => routeFormUpdateStop(index, 'time', e.target.value)}
                                 placeholder="HH:MM"
                                 size="sm"
                                 maxW="80px"
@@ -1753,7 +1753,7 @@ const EventsManagement = () => {
                               />
                               <Input
                                 value={stop.name}
-                                onChange={(e) => updateStop(index, 'name', e.target.value)}
+                                onChange={(e) => routeFormUpdateStop(index, 'name', e.target.value)}
                                 placeholder="Nom de l'arrêt"
                                 size="sm"
                                 flex={1}
@@ -1763,14 +1763,14 @@ const EventsManagement = () => {
                                 size="sm"
                                 variant="ghost"
                                 colorScheme="red"
-                                onClick={() => removeStop(index)}
+                                onClick={() => routeFormRemoveStop(index)}
                                 aria-label="Supprimer l'arrêt"
                                 isDisabled={routeForm.stops.length <= 2}
                               />
                             </HStack>
                             <Input
                               value={stop.address}
-                              onChange={(e) => updateStop(index, 'address', e.target.value)}
+                              onChange={(e) => routeFormUpdateStop(index, 'address', e.target.value)}
                               placeholder="Adresse complète"
                               size="sm"
                             />
@@ -1808,7 +1808,7 @@ const EventsManagement = () => {
                                 leftIcon={<FiPlus />}
                                 size="sm"
                                 colorScheme="blue"
-                                onClick={addStop}
+                                onClick={routeFormAddStop}
                                 isDisabled={!newStop.name.trim() || !newStop.time.trim()}
                               >
                                 Ajouter
