@@ -159,7 +159,7 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
               <Button
                 leftIcon={<FiUpload />}
                 size="sm"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                 isLoading={uploading}
                 colorScheme="blue"
               >
@@ -170,7 +170,7 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
                   leftIcon={<FiTarget />}
                   size="sm"
                   colorScheme="orange"
-                  onClick={onOpen}
+                  onClick={(e) => { e.stopPropagation(); onOpen(); }}
                 >
                   Position focale
                 </Button>

@@ -462,8 +462,8 @@ app.delete('/vehicles/:parc', requireAuth, async (req, res) => {
 });
 
 // ---------- Galerie upload ----------
-// Uploader with higher limit (10MB per file)
-const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+// Limit uploads to 1.5MB per file to avoid DB bloat
+const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 1.5 * 1024 * 1024 } });
 app.post('/vehicles/:parc/gallery', requireAuth, uploadLarge.array('images', 10), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
@@ -481,7 +481,8 @@ app.post('/vehicles/:parc/gallery', requireAuth, uploadLarge.array('images', 10)
       return `data:${mimeType};base64,${base64}`;
     });
     
-    const gallery = existing.concat(added);
+    const MAX_GALLERY_IMAGES = 12;
+    const gallery = existing.concat(added).slice(0, MAX_GALLERY_IMAGES);
 
     const updated = await prisma.vehicle.update({
       where: { parc },
