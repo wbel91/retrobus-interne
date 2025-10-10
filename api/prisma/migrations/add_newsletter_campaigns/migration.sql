@@ -43,5 +43,12 @@ CREATE INDEX "NewsletterCampaignSend_campaignId_idx" ON "NewsletterCampaignSend"
 CREATE INDEX "NewsletterCampaignSend_subscriberId_idx" ON "NewsletterCampaignSend"("subscriberId");
 CREATE INDEX "NewsletterCampaignSend_status_idx" ON "NewsletterCampaignSend"("status");
 
-ADD CONSTRAINT "NewsletterCampaignSend_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES "NewsletterCampaign"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ADD CONSTRAINT "NewsletterCampaignSend_subscriberId_fkey" FOREIGN KEY ("subscriberId") REFERENCES "NewsletterSubscriber"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "NewsletterCampaignSend"
+  ADD CONSTRAINT "NewsletterCampaignSend_campaignId_fkey"
+  FOREIGN KEY ("campaignId") REFERENCES "NewsletterCampaign"("id")
+  ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "NewsletterCampaignSend"
+  ADD CONSTRAINT "NewsletterCampaignSend_subscriberId_fkey"
+  FOREIGN KEY ("subscriberId") REFERENCES "NewsletterSubscriber"("id")
+  ON DELETE CASCADE ON UPDATE CASCADE;

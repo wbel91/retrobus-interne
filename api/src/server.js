@@ -50,6 +50,16 @@ app.use(cors({
   optionsSuccessStatus: 204,
 }));
 
+// For public read-only routes, allow any origin (mirror Origin)
+import corsLib from 'cors';
+app.use('/public', corsLib({
+  origin: true,
+  credentials: false,
+  methods: ["GET","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+  optionsSuccessStatus: 204,
+}));
+
 // Health endpoints for platform checks
 app.get('/health', async (_req, res) => {
   let db = 'down';
