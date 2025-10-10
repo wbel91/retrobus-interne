@@ -36,6 +36,19 @@ const allowedRegexes = [
 
 app.use(express.json({ limit: "10mb" }));
 
+// TEMP: Open CORS globally to unblock clients (no credentials)
+// Remove once a stricter CORS policy is finalized
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type,Authorization');
+  // Do NOT set Allow-Credentials when using wildcard
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true); // ex: requêtes serveur→serveur
@@ -73,7 +86,8 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 204,
 };
-app.options('*', cors(corsOptions));
+// Express 5 + path-to-regexp v8: avoid '*' wildcard, use RegExp to match all
+app.options(/.*/, cors(corsOptions));
 
 // Health endpoints for platform checks
 app.get('/health', async (_req, res) => {
