@@ -59,6 +59,61 @@ const EventsManagement = () => {
   // États pour l'édition des trajets
   const [editingRoute, setEditingRoute] = useState(null);
   const [routeCapacityEdit, setRouteCapacityEdit] = useState(false);
+  const [routeForm, setRouteForm] = useState({
+    name: '',
+    capacity: 0,
+    vehicle: '',
+    driver: '',
+    stops: []
+  });
+  const [newStop, setNewStop] = useState({ time: '', name: '', address: '' });
+  const { isOpen: isMapOpen, onOpen: onMapOpen, onClose: onMapClose } = useDisclosure();
+
+  const updateStop = (index, field, value) => {
+    setRouteForm(prev => {
+      const current = Array.isArray(prev.stops) ? prev.stops : [];
+      const next = [...current];
+      next[index] = { ...(next[index] || {}), [field]: value };
+      return { ...prev, stops: next };
+    });
+  };
+
+  const removeStop = (index) => {
+    setRouteForm(prev => {
+      const current = Array.isArray(prev.stops) ? prev.stops : [];
+      const next = current.filter((_, i) => i !== index);
+      return { ...prev, stops: next };
+    });
+  };
+
+  const addStop = () => {
+    if (!newStop?.name || !newStop?.time) return;
+    setRouteForm(prev => ({
+      ...prev,
+      stops: [...(Array.isArray(prev.stops) ? prev.stops : []), { ...newStop }]
+    }));
+    setNewStop({ time: '', name: '', address: '' });
+  };
+
+  const saveRoute = async () => {
+    setSaving(true);
+    try {
+      if (editingRoute != null) {
+        setRoutes(prev => prev.map((r, i) => (i === editingRoute ? { ...routeForm } : r)));
+      } else {
+        setRoutes(prev => [...prev, { ...routeForm }]);
+      }
+      onRouteEditClose();
+    } catch (e) {
+      console.error('saveRoute error', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const generateRouteFromMap = () => {
+    toast({ status: 'info', title: 'Génération automatique à venir' });
+  };
   
   const [stats, setStats] = useState({
     total: 0,

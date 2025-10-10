@@ -26,6 +26,8 @@ const allowedOrigins = [
   "https://www.retrobus-interne.fr",
   "https://www.association-rbe.fr",
   "https://association-rbe.fr",
+  "https://retrobus-essonne.fr",
+  "https://www.retrobus-essonne.fr",
 ];
 
 const allowedRegexes = [
