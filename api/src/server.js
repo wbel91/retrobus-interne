@@ -83,11 +83,15 @@ const stringifyJsonField = (field) => {
 
 const API_BASE = process.env.PUBLIC_API_BASE || '';
 
-function absolutize(path) {
-  if (!path) return path;
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  if (!API_BASE) return path;
-  return `${API_BASE}${path}`;
+function absolutize(p) {
+  if (!p) return p;
+  // Keep absolute URLs and data/blob URIs untouched
+  if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:') || p.startsWith('blob:')) return p;
+  // If no base is configured, leave as-is
+  if (!API_BASE) return p;
+  // Only prefix root-relative paths
+  if (p.startsWith('/')) return `${API_BASE}${p}`;
+  return p;
 }
 
 // Transform vehicle data for API responses
