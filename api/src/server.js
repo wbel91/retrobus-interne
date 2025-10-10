@@ -460,7 +460,9 @@ app.delete('/vehicles/:parc', requireAuth, async (req, res) => {
 });
 
 // ---------- Galerie upload ----------
-app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 10), async (req, res) => {
+// Uploader with higher limit (10MB per file)
+const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+app.post('/vehicles/:parc/gallery', requireAuth, uploadLarge.array('images', 10), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
@@ -491,7 +493,34 @@ app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 1
   }
 });
 
-app.post('/vehicles/:parc/background', requireAuth, uploadGallery.single('image'), async (req, res) => {
+// Delete an image from gallery
+app.delete('/vehicles/:parc/gallery', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { parc } = req.params;
+    const { image } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image' });
+
+    const v = await prisma.vehicle.findUnique({ where: { parc } });
+    if (!v) return res.status(404).json({ error: 'Vehicle not found' });
+
+    const existingGallery = parseJsonField(v.gallery);
+    const existing = Array.isArray(existingGallery) ? existingGallery : [];
+    const updatedGallery = existing.filter(g => g !== image);
+
+    const updated = await prisma.vehicle.update({
+      where: { parc },
+      data: { gallery: stringifyJsonField(updatedGallery) }
+    });
+
+    res.json({ gallery: parseJsonField(updated.gallery) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Delete gallery image failed' });
+  }
+});
+
+app.post('/vehicles/:parc/background', requireAuth, uploadLarge.single('image'), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;

@@ -72,6 +72,13 @@ export default function GalleryManager({
     return (import.meta.env.VITE_API_URL || '') + g;
   };
 
+  // Variante robuste pour rterner la source d'image
+  const toSrc2 = (g) => {
+    if (!g) return g;
+    if (g.startsWith('http://') || g.startsWith('https://') || g.startsWith('data:') || g.startsWith('blob:')) return g;
+    return (import.meta.env.VITE_API_URL || '') + g;
+  };
+
   return (
     <Box>
       <Input
@@ -88,7 +95,7 @@ export default function GalleryManager({
       <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
         {value.map((g, i) => (
           <Box key={g + i} border="1px solid" borderColor="gray.200" borderRadius="md" p={1}>
-            <Image src={toSrc(g)} w="100%" h="110px" objectFit="cover" borderRadius="sm" />
+            <Image src={toSrc2(g)} w="100%" h="110px" objectFit="cover" borderRadius="sm" />
             <HStack mt={1} justify="space-between">
               <HStack>
                 <IconButton
