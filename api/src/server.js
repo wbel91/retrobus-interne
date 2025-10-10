@@ -51,14 +51,29 @@ app.use(cors({
 }));
 
 // For public read-only routes, allow any origin (mirror Origin)
-import corsLib from 'cors';
-app.use('/public', corsLib({
+app.use('/public', cors({
   origin: true,
   credentials: false,
   methods: ["GET","OPTIONS"],
   allowedHeaders: ["Content-Type","Authorization"],
   optionsSuccessStatus: 204,
 }));
+
+// Respond to preflight for all routes with same options
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin) || allowedRegexes.some(r => r.test(origin))) {
+      return cb(null, true);
+    }
+    return cb(new Error("Origin not allowed by CORS: " + origin));
+  },
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+app.options('*', cors(corsOptions));
 
 // Health endpoints for platform checks
 app.get('/health', async (_req, res) => {
