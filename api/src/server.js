@@ -13,29 +13,41 @@ import { newsletterService } from './newsletter-service.js';
 import bcrypt from 'bcrypt';
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+app.set("trust proxy", 1); // important sur Railway derrière proxy
 
-// Config
-app.use(express.json({ limit: '10mb' })); // ou plus si besoin
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "http://localhost:5174",
+  "https://retrobus-interne.fr",
+  "https://www.retrobus-interne.fr",
+  "https://www.association-rbe.fr",
+  "https://association-rbe.fr",
+];
+
+const allowedRegexes = [
+  /^https:\/\/.*\.netlify\.app$/, // déploiements Netlify (préviews)
+];
+
+app.use(express.json({ limit: "10mb" }));
+
 app.use(cors({
   origin: (origin, cb) => {
-    const allowed = [
-      'http://localhost:5173',     // ✅ Déjà présent
-      'http://localhost:4173',
-      'http://localhost:3000',
-      'http://localhost:5174',
-      'https://www.association-rbe.fr',
-      'https://association-rbe.fr',
-      'https://retrobus-interne.fr',
-      'https://www.retrobus-interne.fr',
-      'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
-    ];
-    console.log('🌍 CORS origin:', origin); // DEBUG
-    if (!origin || allowed.includes(origin)) return cb(null, true);
-    return cb(new Error('Origin not allowed'));
+    if (!origin) return cb(null, true); // ex: requêtes serveur→serveur
+    if (allowedOrigins.includes(origin) || allowedRegexes.some(r => r.test(origin))) {
+      return cb(null, true);
+    }
+    return cb(new Error("Origin not allowed by CORS: " + origin));
   },
-  credentials: true
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 204,
 }));
+
+// Préflight OPTIONS OK partout (évite 403 sur méthodes/headers custom)
+app.options("*", cors());
 
 let prisma;
 try {
