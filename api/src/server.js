@@ -13,12 +13,10 @@ import { newsletterService } from './newsletter-service.js';
 import bcrypt from 'bcrypt';
 
 const app = express();
-// Server port configuration
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
+app.set('trust proxy', 1);
 
-// === Début du bloc CORS recommandé ===
-app.set("trust proxy", 1);
-
+// Place ce bloc AVANT toutes les routes et supprime les autres CORS existants
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:4173',
@@ -31,90 +29,41 @@ const allowedOrigins = [
   'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
 ];
 
-// Middleware explicite pour CORS (gère options)
+function isAllowedOrigin(origin) {
+  return !!origin && allowedOrigins.includes(origin);
+}
+
+// Middleware CORS unique
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  console.log('🌍 CORS origin:', origin);
+  // Log pour debug
+  console.log('🌍 CORS origin:', origin, '→', isAllowedOrigin(origin) ? 'allowed' : 'not-allowed');
 
-  // Si aucune origine (server->server), on continue sans echo d'origine
-  if (!origin) {
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') return res.sendStatus(204);
-    return next();
-  }
+  // Méthodes/headers toujours déclarés
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
 
-  if (allowedOrigins.includes(origin)) {
+  // Refléter les headers demandés par le préflight, sinon valeur par défaut
+  const reqHeaders = req.headers['access-control-request-headers'];
+  res.setHeader('Access-Control-Allow-Headers', reqHeaders || 'Content-Type, Authorization, X-Requested-With');
+
+  if (isAllowedOrigin(origin)) {
+    // Reflète uniquement l’origine autorisée (OK avec credentials)
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   } else {
-    // origine non autorisée: ne pas définir ACAO
-    console.warn(`⚠️ Origin not allowed: ${origin}`);
+    // Pas d’ACAO pour les origines non autorisées
   }
 
+  // Répondre tout de suite aux préflights
   if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
+
+  return next();
 });
-// === Fin du bloc CORS recommandé ===
 
-app.use(express.json({ limit: "10mb" }));
-
-// TEMP: Open CORS globally to unblock clients (no credentials)
-// Remove once a stricter CORS policy is finalized
-app.use((req, res, next) => {
-  const origin = req.headers.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type,Authorization');
-  // Do NOT set Allow-Credentials when using wildcard
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
-console.log('[BOOT] CORS OPEN: global CORS middleware enabled');
-
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // ex: requêtes serveur→serveur
-    if (allowedOrigins.includes(origin) || allowedRegexes.some(r => r.test(origin))) {
-      return cb(null, true);
-    }
-    return cb(new Error("Origin not allowed by CORS: " + origin));
-  },
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-  credentials: true,
-  optionsSuccessStatus: 204,
-}));
-
-// For public read-only routes, allow any origin (mirror Origin)
-app.use('/public', cors({
-  origin: true,
-  credentials: false,
-  methods: ["GET","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-  optionsSuccessStatus: 204,
-}));
-
-// Respond to preflight for all routes with same options
-const corsOptions = {
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin) || allowedRegexes.some(r => r.test(origin))) {
-      return cb(null, true);
-    }
-    return cb(new Error("Origin not allowed by CORS: " + origin));
-  },
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-  credentials: true,
-  optionsSuccessStatus: 204,
-};
-// Express 5 + path-to-regexp v8: avoid '*' wildcard, use RegExp to match all
-app.options(/.*/, cors(corsOptions));
+// Parser JSON après CORS (évite tout traitement sur OPTIONS)
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 // Health endpoints for platform checks
 app.get('/health', async (_req, res) => {
@@ -1442,21 +1391,26 @@ app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
 // ---------- Server start ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
-  console.log('Boot API (newsletter debug) build=', new Date().toISOString());
+  console.log('Boot =', new Date().toISOString());
 });
 
-export default app;
-
-// Global error handler to ensure CORS headers on errors
+// Error handler — mettre AVANT app.listen pour qu’il s’applique à tout
 app.use((err, req, res, _next) => {
   try {
-    const origin = req.headers?.origin || '*';
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
+    const origin = req.headers.origin;
+    if (isAllowedOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type,Authorization');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-Requested-With'
+    );
   } catch {}
   const status = err?.status || err?.statusCode || 500;
+  console.error('❌ Error:', err?.message || err);
   res.status(status).json({ error: err?.message || 'Server error' });
 });
 
