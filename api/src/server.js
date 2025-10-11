@@ -166,7 +166,17 @@ app.get('/public/ping', (_req, res) => {
 const transformVehicle = (vehicle) => {
   if (!vehicle) return null;
   let caract = [];
-  try { caract = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : []; } catch {}
+  try { 
+    const parsed = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : [];
+    // Si c'est un tableau label/value, le garder tel quel
+    // Si c'est un objet, le convertir en tableau label/value
+    if (Array.isArray(parsed)) {
+      caract = parsed;
+    } else {
+      caract = Object.entries(parsed).map(([label, value]) => ({ label, value }));
+    }
+  } catch {}
+  
   const gallery = parseJsonField(vehicle.gallery) || [];
   return {
     id: vehicle.id,
