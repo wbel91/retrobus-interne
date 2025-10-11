@@ -9,7 +9,7 @@ import QRCode from 'qrcode';
 import { PrismaClient } from '@prisma/client';
 
 // Local modules
-import * as documentsAPI from './documents.js';
+import { documentsAPI as docsAPI, upload as documentsUpload } from './documents.js';
 import * as newsletterService from './newsletter-service.js';
 
 const app = express();
@@ -367,10 +367,6 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 // ---------- Multer storages ----------
 const galleryStorage = multer.memoryStorage();
 const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 1.5 * 1024 * 1024 } });
-
-// For documents API (missing previously)
-const documentStorage = multer.memoryStorage();
-const upload = multer({ storage: documentStorage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ---------- Vehicles (private) ----------
 app.get('/vehicles', requireAuth, async (_req, res) => {
@@ -1334,12 +1330,12 @@ app.get('/api/members/stats', authenticateToken, async (_req, res) => {
 });
 
 // ---------- Documents routes ----------
-app.get('/api/documents/member/:memberId', authenticateToken, documentsAPI.getByMember);
-app.post('/api/documents/member/:memberId/upload', authenticateToken, upload.single('document'), documentsAPI.upload);
-app.get('/api/documents/:documentId/download', authenticateToken, documentsAPI.download);
-app.put('/api/documents/:documentId/status', authenticateToken, documentsAPI.updateStatus);
-app.delete('/api/documents/:documentId', authenticateToken, documentsAPI.delete);
-app.get('/api/documents/expiring', authenticateToken, documentsAPI.getExpiring);
+app.get('/api/documents/member/:memberId', authenticateToken, docsAPI.getByMember);
+app.post('/api/documents/member/:memberId/upload', authenticateToken, documentsUpload.single('document'), docsAPI.upload);
+app.get('/api/documents/:documentId/download', authenticateToken, docsAPI.download);
+app.put('/api/documents/:documentId/status', authenticateToken, docsAPI.updateStatus);
+app.delete('/api/documents/:documentId', authenticateToken, docsAPI.delete);
+app.get('/api/documents/expiring', authenticateToken, docsAPI.getExpiring);
 
 // ---------- Newsletter Campaigns (squelette) ----------
 app.get('/newsletter/campaigns', requireAuth, async (req, res) => {
@@ -1655,5 +1651,5 @@ app.use((err, req, res, _next) => {
 // ---------- Start server ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
-  console.log('Boot =', new Date().toISOString());
+  console.log('Boot =', new Date().toISOString());  console.log('Boot =', new Date().toISOString());
 });
