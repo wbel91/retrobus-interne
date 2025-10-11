@@ -26,42 +26,63 @@ const allowedOrigins = [
   'https://association-rbe.fr',
   'https://retrobus-interne.fr',
   'https://www.retrobus-interne.fr',
-  'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
 ];
 
 function isAllowedOrigin(origin) {
   return !!origin && allowedOrigins.includes(origin);
 }
 
+// Public, lecture seule: autoriser en wildcard sans credentials
+function isPublicPath(req) {
+  const p = req.path || req.url || '';
+  // GET/HEAD pour tout /public et /flashes/all, plus /health
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    if (p.startsWith('/public/')) return true;
+    if (p === '/flashes/all') return true;
+    if (p === '/health' || p === '/public/health') return true;
+  }
+  // POST public spécifique (newsletter inscription)
+  if (req.method === 'POST' && p === '/newsletter/subscribe') return true;
+  return false;
+}
+
 // Middleware CORS unique
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  // Log pour debug
-  console.log('🌍 CORS origin:', origin, '→', isAllowedOrigin(origin) ? 'allowed' : 'not-allowed');
+  const allowed = isAllowedOrigin(origin);
+  const publicPath = isPublicPath(req);
+
+  // Entête de sonde pour vérifier la mise en prod
+  res.setHeader('X-CORS-MW', 'cors-v3');
+
+  // Log pour debug en prod Railway
+  console.log('🌍 CORS origin:', origin, '→', allowed ? 'allowed' : (publicPath ? 'public-*' : 'not-allowed'), req.method, req.path);
 
   // Méthodes/headers toujours déclarés
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-
-  // Refléter les headers demandés par le préflight, sinon valeur par défaut
   const reqHeaders = req.headers['access-control-request-headers'];
   res.setHeader('Access-Control-Allow-Headers', reqHeaders || 'Content-Type, Authorization, X-Requested-With');
 
-  if (isAllowedOrigin(origin)) {
-    // Reflète uniquement l’origine autorisée (OK avec credentials)
+  if (allowed) {
+    // Reflète l’origine autorisée (OK avec credentials)
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    // Pas d’ACAO pour les origines non autorisées
+  } else if (publicPath) {
+    // Public read-only: permissif sans credentials
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
-  // Répondre tout de suite aux préflights
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  // Préflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Max-Age', '86400');
+    return res.sendStatus(204);
+  }
 
   return next();
 });
 
-// Parser JSON après CORS (évite tout traitement sur OPTIONS)
+// Parsers après CORS
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
@@ -1394,21 +1415,30 @@ app.listen(PORT, () => {
   console.log('Boot =', new Date().toISOString());
 });
 
-// Error handler — mettre AVANT app.listen pour qu’il s’applique à tout
+// Error handler — placer AVANT app.listen
 app.use((err, req, res, _next) => {
   try {
     const origin = req.headers.origin;
-    if (isAllowedOrigin(origin)) {
+    const allowed = isAllowedOrigin(origin);
+    const publicPath = isPublicPath(req);
+
+    res.setHeader('X-CORS-MW', 'cors-v3');
+
+    if (allowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (publicPath) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
     }
+
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
       req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-Requested-With'
     );
   } catch {}
+
   const status = err?.status || err?.statusCode || 500;
   console.error('❌ Error:', err?.message || err);
   res.status(status).json({ error: err?.message || 'Server error' });

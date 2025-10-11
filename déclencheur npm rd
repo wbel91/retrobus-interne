@@ -11,3 +11,13 @@ npm run dev
 --DECLENCHEUR DE PUSH--
 
 Interne : 
+
+cd C:\Dev\RETROBUS_ESSONNE\interne
+git add .
+git commit -m "mise à jour"
+git push origin main
+
+cd C:\Dev\RETROBUS_ESSONNE\interne
+git add .
+git commit -m "mise à jour"
+git push origin main
