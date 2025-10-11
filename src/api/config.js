@@ -20,6 +20,8 @@ const getAuthHeaders = (token, options = {}) => ({
 
 // Instance API client avec support JWT
 export const apiClient = {
+  baseURL: API_BASE_URL,
+  
   get: async (url, options = {}) => {
     const token = localStorage.getItem('token');
     const headers = token 
@@ -34,7 +36,6 @@ export const apiClient = {
     
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expiré, nettoyer le localStorage
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
@@ -61,7 +62,6 @@ export const apiClient = {
     
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expiré, nettoyer le localStorage
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
@@ -88,7 +88,6 @@ export const apiClient = {
     
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expiré, nettoyer le localStorage
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
@@ -114,7 +113,6 @@ export const apiClient = {
     
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expiré, nettoyer le localStorage
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
@@ -127,6 +125,5 @@ export const apiClient = {
   }
 };
 
-// Export de l'URL de base pour les autres modules
 export { API_BASE_URL };
 

@@ -16,70 +16,22 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
 
-// ---------- CORS (unique, robuste) ----------
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:4173',
-  'http://localhost:3000',
-  'http://localhost:5174',
-  'https://www.association-rbe.fr',
-  'https://association-rbe.fr',
-  'https://retrobus-interne.fr',
-  'https://www.retrobus-interne.fr',
-];
-
-function isAllowedOrigin(origin) {
-  return !!origin && allowedOrigins.includes(origin);
-}
-
-// Public, lecture seule + subscribe public
-function isPublicPath(req) {
-  const p = req.path || req.url || '';
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    if (p.startsWith('/public/')) return true;
-    if (p === '/flashes/all') return true;
-    if (p === '/health' || p === '/public/health') return true;
-  }
-  if (req.method === 'POST' && p === '/newsletter/subscribe') return true;
-  return false;
-}
-
-// Single CORS middleware (place FIRST, before parsers and routes)
+// ---------- CORS SIMPLIFIE ----------
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const allowed = isAllowedOrigin(origin);
-  const publicPath = isPublicPath(req);
-
-  // Probe header to confirm deployed version
-  res.setHeader('X-CORS-MW', 'cors-v3');
-  res.setHeader('Access-Control-Expose-Headers', 'X-CORS-MW');
-
-  // Methods/headers
+  // Headers CORS permissifs
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  const reqHeaders = req.headers['access-control-request-headers'];
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    reqHeaders || 'Content-Type, Authorization, X-Requested-With'
-  );
-
-  if (allowed) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else if (publicPath) {
-    // Public read-only: permissif sans credentials
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Max-Age', '86400');
     return res.sendStatus(204);
   }
 
   return next();
 });
 
-// ---------- Parsers après CORS ----------
+// ---------- Parsers ----------
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 

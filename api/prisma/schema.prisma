@@ -23,14 +23,15 @@ model Vehicle {
   history           String?
   caracteristiques  String?
   gallery           String?
-  backgroundImage   String?      // <- NEW
-  backgroundPosition String?     // <- NEW (ex: "50% 50%")
+  backgroundImage   String?
+  backgroundPosition String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   // Relations
-  usages  Usage[]  @relation("VehicleUsages")
-  reports Report[] @relation("VehicleReports")
+  usages  Usage[]
+  reports Report[]
+  events  Event[]   @relation("EventVehicle")
 }
 
 model Usage {
@@ -41,31 +42,33 @@ model Usage {
   conducteur   String?
   participants String?
   note         String?
-  relatedTo    Int?
+  relatedTo    String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  // Relation vers Vehicle via le champ parc
-  vehicle Vehicle @relation("VehicleUsages", fields: [parc], references: [parc])
+  // Relations
+  vehicle Vehicle @relation(fields: [parc], references: [parc], onDelete: Cascade)
+  reports Report[]
 }
 
 model Report {
-  id          Int      @id @default(autoincrement())
-  parc        String
+  id         Int      @id @default(autoincrement())
+  parc       String
+  usageId    Int?
   description String?
-  usageId     Int?
-  filesMeta   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  filesMeta  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  // Relation vers Vehicle via le champ parc
-  vehicle Vehicle @relation("VehicleReports", fields: [parc], references: [parc])
+  // Relations
+  vehicle Vehicle @relation(fields: [parc], references: [parc], onDelete: Cascade)
+  usage   Usage?  @relation(fields: [usageId], references: [id], onDelete: SetNull)
 }
 
 model Flash {
-  id        String   @id @default(cuid())
-  message   String
-  category  String   @default("INFO") // INFO, NOTIF, POS
+  id        Int      @id @default(autoincrement())
+  content   String
+  type      String   @default("info")
   active    Boolean  @default(true)
   expiresAt DateTime?
   createdAt DateTime @default(now())
@@ -79,241 +82,184 @@ enum EventStatus {
 }
 
 model Event {
-  id           String      @id           // slug lisible: halloween2025
+  id           String      @id
   title        String
   date         DateTime
   time         String?
   location     String?
   description  String?
   helloAssoUrl String?
-  adultPrice   Float?      // Changé de Int à Float pour les centimes
-  childPrice   Float?      // Changé de Int à Float pour les centimes
-  vehicleId    String?     // Ajout du champ véhicule
-  layout       String?     // variante future d'affichage (ex: "hero-poster", "simple")
-  extras       String?     // JSON extensible (programme, mentions légales, etc.)
-  status       EventStatus @default(PUBLISHED)
+  adultPrice   Float?
+  childPrice   Float?
+  vehicleId    String?
+  status       EventStatus @default(DRAFT)
+  layout       String?
+  extras       String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  @@index([date])
+  // Relations
+  vehicle       Vehicle?            @relation("EventVehicle", fields: [vehicleId], references: [parc])
+  registrations EventRegistration[]
+}
+
+model EventRegistration {
+  id                  String   @id @default(cuid())
+  eventId             String
+  participantName     String
+  participantEmail    String
+  adultTickets        Int      @default(1)
+  childTickets        Int      @default(0)
+  totalAmount         Float
+  paymentMethod       String   @default("helloasso")
+  helloAssoStatus     String   @default("PENDING")
+  helloAssoOrderId    String?
+  qrCodeData          String?
+  ticketSent          Boolean  @default(false)
+  registrationDate    DateTime @default(now())
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([participantEmail])
 }
 
 model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
-  status    String   @default("CONFIRMED") // CONFIRMED | PENDING | UNSUB
+  status    String   @default("CONFIRMED")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  // Relations
-  campaigns NewsletterCampaignSend[]
 }
 
 model NewsletterCampaign {
   id          String   @id @default(cuid())
   title       String
   subject     String
-  content     String   // HTML content
-  status      String   @default("DRAFT") // DRAFT, SCHEDULED, SENDING, SENT, CANCELLED
+  content     String
+  status      String   @default("DRAFT")
   scheduledAt DateTime?
   sentAt      DateTime?
-  createdBy   String   // User who created the campaign
+  recipientCount Int?
+  successCount   Int?
+  failureCount   Int?
+  createdBy   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  // Statistics
-  totalSent     Int @default(0)
-  totalOpened   Int @default(0)
-  totalClicked  Int @default(0)
-  totalBounced  Int @default(0)
-  
-  // Relations
-  sends NewsletterCampaignSend[]
-  
-  @@index([status])
-  @@index([createdAt])
 }
 
-model NewsletterCampaignSend {
-  id           String   @id @default(cuid())
-  campaignId   String
-  subscriberId String
-  email        String
-  status       String   @default("PENDING") // PENDING, SENT, FAILED, OPENED, CLICKED, BOUNCED
-  sentAt       DateTime?
-  openedAt     DateTime?
-  clickedAt    DateTime?
-  errorMessage String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  // Relations
-  campaign   NewsletterCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  subscriber NewsletterSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
-  
-  @@unique([campaignId, subscriberId])
-  @@index([campaignId])
-  @@index([subscriberId])
-  @@index([status])
+enum MembershipType {
+  STANDARD
+  FAMILY
+  STUDENT
+  HONORARY
+  LIFETIME
 }
 
-model EventRegistration {
-  id                String   @id @default(cuid())
-  eventId           String
-  participantName   String
-  participantEmail  String
-  helloAssoOrderId  String?  // ID de commande HelloAsso
-  helloAssoStatus   String?  // PENDING, VALIDATED, CANCELLED
-  adultTickets      Int      @default(0)
-  childTickets      Int      @default(0)
-  totalAmount       Float?
-  paymentMethod     String   // "helloasso", "internal", "free"
-  registrationDate  DateTime @default(now())
-  ticketSent        Boolean  @default(false)
-  qrCodeData        String?  // JSON du QR code
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
-  @@index([eventId])
-  @@index([participantEmail])
-  @@index([helloAssoOrderId])
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  CANCELLED
+}
+
+enum MemberRole {
+  MEMBER
+  DRIVER
+  ADMIN
+  BUREAU
+}
+
+enum DocumentType {
+  DRIVING_LICENSE
+  IDENTITY_CARD
+  INSURANCE_RECORD
+  MEMBERSHIP_FORM
+  MEDICAL_CERTIFICATE
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
 }
 
 model Member {
-  id                String   @id @default(cuid())
-  memberNumber      String   @unique // Numéro d'adhérent (ex: 2025-001)
-  firstName         String
-  lastName          String
-  email             String   @unique
-  phone             String?
-  address           String?
-  city              String?
-  postalCode        String?
-  birthDate         DateTime?
-  membershipType    MembershipType @default(STANDARD)
-  membershipStatus  MembershipStatus @default(PENDING)
-  joinDate          DateTime @default(now())
-  renewalDate       DateTime
-  lastPaymentDate   DateTime?
-  paymentAmount     Float?
-  paymentMethod     String? // "cash", "check", "transfer", "helloasso"
+  id                       String    @id @default(cuid())
+  memberNumber             String    @unique
+  firstName                String
+  lastName                 String
+  email                    String    @unique
+  phone                    String?
+  address                  String?
+  city                     String?
+  postalCode               String?
+  birthDate                DateTime?
   
-  // Rôle et permissions
-  role              MemberRole @default(MEMBER)
+  // Adhésion
+  membershipType           MembershipType   @default(STANDARD)
+  membershipStatus         MembershipStatus @default(PENDING)
+  joinDate                 DateTime  @default(now())
+  renewalDate              DateTime?
+  lastPaymentDate          DateTime?
+  paymentAmount            Float?
+  paymentMethod            String?
   
-  // Accès aux sites
-  hasExternalAccess Boolean  @default(false) // Accès site externe (newsletter, etc.)
-  hasInternalAccess Boolean  @default(false) // Accès MyRBE
-  internalPassword  String?  // Hash du mot de passe pour MyRBE
+  // Accès et rôles
+  role                     MemberRole @default(MEMBER)
+  hasExternalAccess        Boolean   @default(false)
+  hasInternalAccess        Boolean   @default(false)
+  internalPassword         String?
   
-  // Informations spécifiques aux conducteurs
-  driverLicense            String?    // Type de permis (B, C, D, SPECIAL)
-  licenseExpiryDate        DateTime?  // Date d'expiration du permis
-  medicalCertificateDate   DateTime?  // Date de la visite médicale
-  emergencyContact         String?    // Contact d'urgence
-  emergencyPhone           String?    // Téléphone d'urgence
-  driverCertifications     String[]   // Certifications obtenues
-  vehicleAuthorizations    String[]   // Véhicules autorisés (parcs)
-  maxPassengers            Int?       // Nombre max de passagers autorisé
-  driverNotes              String?    // Notes spécifiques conducteur
+  // Informations conducteur
+  driverLicense            String?
+  licenseExpiryDate        DateTime?
+  medicalCertificateDate   DateTime?
+  emergencyContact         String?
+  emergencyPhone           String?
+  driverCertifications     String[]
+  vehicleAuthorizations    String[]
+  maxPassengers            Int?
+  driverNotes              String?
   
   // Préférences
   newsletter        Boolean  @default(true)
   notifications     Boolean  @default(true)
   
   // Métadonnées
-  notes             String?  // Notes administratives
-  createdBy         String?  // Qui a créé le membre
+  notes             String?
+  createdBy         String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   
   // Relations
-  documents         MemberDocument[] @relation("MemberDocuments")
-  passwordResets    PasswordReset[]  @relation("MemberPasswordResets")
-  
-  @@index([memberNumber])
-  @@index([email])
-  @@index([membershipStatus])
-  @@index([renewalDate])
-  @@index([role])
-  @@index([licenseExpiryDate])
+  documents Document[]
 }
 
-model MemberDocument {
-  id            String         @id @default(cuid())
+model Document {
+  id            String   @id @default(cuid())
   memberId      String
-  documentType  DocumentType
-  fileName      String         // Nom original du fichier
-  filePath      String         // Chemin de stockage
-  fileSize      Int            // Taille en octets
-  mimeType      String         // Type MIME du fichier
-  uploadedAt    DateTime       @default(now())
-  expiryDate    DateTime?      // Date d'expiration (pour permis, CNI)
+  type          DocumentType
+  fileName      String
+  filePath      String
+  fileSize      Int?
+  mimeType      String?
+  expiryDate    DateTime?
   status        DocumentStatus @default(PENDING)
-  notes         String?        // Notes administratives
-  uploadedBy    String?        // Qui a uploadé le document
-  
-  // Relation
-  member        Member         @relation("MemberDocuments", fields: [memberId], references: [id], onDelete: Cascade)
-  
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  reviewNotes   String?
+  uploadedAt    DateTime @default(now())
+
+  // Relations
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
   @@index([memberId])
-  @@index([documentType])
+  @@index([type])
   @@index([status])
   @@index([expiryDate])
-}
-
-model PasswordReset {
-  id        String   @id @default(cuid())
-  memberId  String
-  token     String   @unique // Token de réinitialisation
-  expiresAt DateTime // Expiration du token (24h)
-  usedAt    DateTime? // Date d'utilisation du token
-  createdAt DateTime @default(now())
-  requestedBy String? // Qui a demandé la réinitialisation
-  
-  // Relation
-  member    Member   @relation("MemberPasswordResets", fields: [memberId], references: [id], onDelete: Cascade)
-  
-  @@index([token])
-  @@index([memberId])
-  @@index([expiresAt])
-}
-
-enum MembershipType {
-  STANDARD    // Adhésion standard
-  FAMILY      // Adhésion famille
-  STUDENT     // Adhésion étudiant
-  HONORARY    // Membre d'honneur
-  LIFETIME    // Adhésion à vie
-}
-
-enum MembershipStatus {
-  PENDING     // En attente de validation
-  ACTIVE      // Adhésion active
-  EXPIRED     // Adhésion expirée
-  SUSPENDED   // Suspendu
-  CANCELLED   // Annulé
-}
-
-enum MemberRole {
-  MEMBER      // Adhérent simple
-  DRIVER      // Conducteur habilité
-  ADMIN       // Administrateur système
-  BUREAU      // Membre du bureau
-}
-
-enum DocumentType {
-  DRIVING_LICENSE     // Permis de conduire
-  IDENTITY_CARD       // Carte d'identité
-  INSURANCE_RECORD    // Relevé d'informations d'assurance
-  MEMBERSHIP_FORM     // Bulletin d'adhésion
-  MEDICAL_CERTIFICATE // Certificat médical
-  OTHER               // Autre document
-}
-
-enum DocumentStatus {
-  PENDING     // En attente de validation
-  APPROVED    // Validé
-  REJECTED    // Rejeté
-  EXPIRED     // Expiré
 }
