@@ -16,7 +16,6 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
 
-// Place ce bloc AVANT toutes les routes et supprime les autres CORS existants
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:4173',
@@ -32,57 +31,50 @@ function isAllowedOrigin(origin) {
   return !!origin && allowedOrigins.includes(origin);
 }
 
-// Public, lecture seule: autoriser en wildcard sans credentials
 function isPublicPath(req) {
   const p = req.path || req.url || '';
-  // GET/HEAD pour tout /public et /flashes/all, plus /health
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     if (p.startsWith('/public/')) return true;
     if (p === '/flashes/all') return true;
     if (p === '/health' || p === '/public/health') return true;
   }
-  // POST public spécifique (newsletter inscription)
   if (req.method === 'POST' && p === '/newsletter/subscribe') return true;
   return false;
 }
 
-// Middleware CORS unique
+// Single CORS middleware (top of file, before routes)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowed = isAllowedOrigin(origin);
   const publicPath = isPublicPath(req);
 
-  // Entête de sonde pour vérifier la mise en prod
+  // Probe header to confirm deployed version
   res.setHeader('X-CORS-MW', 'cors-v3');
 
-  // Log pour debug en prod Railway
   console.log('🌍 CORS origin:', origin, '→', allowed ? 'allowed' : (publicPath ? 'public-*' : 'not-allowed'), req.method, req.path);
 
-  // Méthodes/headers toujours déclarés
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   const reqHeaders = req.headers['access-control-request-headers'];
   res.setHeader('Access-Control-Allow-Headers', reqHeaders || 'Content-Type, Authorization, X-Requested-With');
 
   if (allowed) {
-    // Reflète l’origine autorisée (OK avec credentials)
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else if (publicPath) {
-    // Public read-only: permissif sans credentials
+    // Critical: set wildcard for public read-only endpoints
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
-  // Préflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Max-Age', '86400');
     return res.sendStatus(204);
   }
 
-  return next();
+  next();
 });
 
-// Parsers après CORS
+// Body parsers after CORS
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
@@ -1415,7 +1407,7 @@ app.listen(PORT, () => {
   console.log('Boot =', new Date().toISOString());
 });
 
-// Error handler — placer AVANT app.listen
+// Error handler — PLACE BEFORE app.listen
 app.use((err, req, res, _next) => {
   try {
     const origin = req.headers.origin;
@@ -1423,7 +1415,6 @@ app.use((err, req, res, _next) => {
     const publicPath = isPublicPath(req);
 
     res.setHeader('X-CORS-MW', 'cors-v3');
-
     if (allowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
@@ -1431,7 +1422,6 @@ app.use((err, req, res, _next) => {
     } else if (publicPath) {
       res.setHeader('Access-Control-Allow-Origin', '*');
     }
-
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
@@ -2008,6 +1998,7 @@ app.post('/api/members', authenticateToken, async (req, res) => {
     const lastMember = await prisma.member.findFirst({
       where: { memberNumber: { startsWith: `${year}-` } },
       orderBy: { memberNumber: 'desc' }
+
     });
     let memberNumber = `${year}-001`;
     if (lastMember) {
