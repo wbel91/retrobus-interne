@@ -17,22 +17,50 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set("trust proxy", 1); // important sur Railway derrière proxy
 
+// --- CORS robuste et simple (mettre AVANT les routes) ---
+// Déclare ta liste d'origines autorisées
 const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://localhost:4173",
-  "http://localhost:5174",
-  "https://retrobus-interne.fr",
-  "https://www.retrobus-interne.fr",
-  "https://www.association-rbe.fr",
-  "https://association-rbe.fr",
-  "https://retrobus-essonne.fr",
-  "https://www.retrobus-essonne.fr",
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://localhost:3000',
+  'http://localhost:5174',
+  'https://www.association-rbe.fr',
+  'https://association-rbe.fr',
+  'https://retrobus-interne.fr',
+  'https://www.retrobus-interne.fr',
+  'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
+  // ajoute d'autres si besoin
 ];
 
-const allowedRegexes = [
-  /^https:\/\/.*\.netlify\.app$/, // déploiements Netlify (préviews)
-];
+// Middleware CORS explicite - positionne-le avant les routes
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  console.log('🌍 CORS origin:', origin);
+
+  // Si pas d'origine (test curl local sans Origin, etc.), on laisse passer
+  if (!origin) {
+    // mais on ajoute quand même des headers utiles pour debug/dev
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    return next();
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin); // echo only allowed origin
+  } else {
+    // Origine non autorisée : ne pas définir Access-Control-Allow-Origin
+    console.warn(`⚠️ Origin not allowed: ${origin}`);
+    // Optionnel : tu peux renvoyer 403 sur OPTIONS si tu veux bloquer explicitement
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -1185,7 +1213,6 @@ app.get('/api/members', authenticateToken, async (req, res) => {
           phone: true,
           membershipType: true,
           membershipStatus: true,
-          role: true,
           joinDate: true,
           renewalDate: true,
           hasExternalAccess: true,
@@ -1761,7 +1788,6 @@ app.get('/members', requireAuth, async (req, res) => {
           phone: true,
           membershipType: true,
           membershipStatus: true,
-          role: true,
           joinDate: true,
           renewalDate: true,
           hasExternalAccess: true,
