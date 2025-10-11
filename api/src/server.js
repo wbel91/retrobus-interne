@@ -15,10 +15,10 @@ import bcrypt from 'bcrypt';
 const app = express();
 // Server port configuration
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-app.set("trust proxy", 1); // important sur Railway derrière proxy
 
-// --- CORS robuste et simple (mettre AVANT les routes) ---
-// Déclare ta liste d'origines autorisées
+// === Début du bloc CORS recommandé ===
+app.set("trust proxy", 1);
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:4173',
@@ -29,38 +29,36 @@ const allowedOrigins = [
   'https://retrobus-interne.fr',
   'https://www.retrobus-interne.fr',
   'https://refreshing-adaptation-rbe-serveurs.up.railway.app',
-  // ajoute d'autres si besoin
 ];
 
-// Middleware CORS explicite - positionne-le avant les routes
+// Middleware explicite pour CORS (gère options)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   console.log('🌍 CORS origin:', origin);
 
-  // Si pas d'origine (test curl local sans Origin, etc.), on laisse passer
+  // Si aucune origine (server->server), on continue sans echo d'origine
   if (!origin) {
-    // mais on ajoute quand même des headers utiles pour debug/dev
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
   }
 
   if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin); // echo only allowed origin
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   } else {
-    // Origine non autorisée : ne pas définir Access-Control-Allow-Origin
+    // origine non autorisée: ne pas définir ACAO
     console.warn(`⚠️ Origin not allowed: ${origin}`);
-    // Optionnel : tu peux renvoyer 403 sur OPTIONS si tu veux bloquer explicitement
   }
 
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+// === Fin du bloc CORS recommandé ===
 
 app.use(express.json({ limit: "10mb" }));
 
