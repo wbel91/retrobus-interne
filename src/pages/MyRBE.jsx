@@ -34,6 +34,7 @@ const cards = [
     to: "/dashboard/newsletter",
     color: "purple.100",
   },
+  { title: "Gestion du Site", to: "/dashboard/site-management", color: "purple.100" }
 ];
 
 export default function MyRBE() {
@@ -64,6 +65,22 @@ export default function MyRBE() {
             </CardBody>
           </Card>
         ))}
+        <Card
+          as={RouterLink}
+          to="/dashboard/site-management"
+          key="Gestion du Site"
+          bg="purple.100"
+          _hover={{ boxShadow: "lg", transform: "scale(1.03)" }}
+          transition="all 0.2s"
+          cursor="pointer"
+        >
+          <CardHeader>
+            <Heading size="md">Gestion du Site</Heading>
+          </CardHeader>
+          <CardBody>
+            <Text>Changelog, pages publiques, etc.</Text>
+          </CardBody>
+        </Card>
       </SimpleGrid>
     </Box>
   );

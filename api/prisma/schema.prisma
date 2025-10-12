@@ -263,3 +263,13 @@ model Document {
   @@index([status])
   @@index([expiryDate])
 }
+
+model Changelog {
+  id        Int      @id @default(autoincrement())
+  title     String
+  version   String
+  date      DateTime @default(now())
+  changes   String   // JSON.stringify(string[])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

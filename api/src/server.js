@@ -1653,3 +1653,78 @@ app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
   console.log('Boot =', new Date().toISOString());  console.log('Boot =', new Date().toISOString());
 });
+
+// Helpers
+const parseChanges = (v) => {
+  try {
+    if (Array.isArray(v)) return v.map(String);
+    if (typeof v === 'string') return JSON.parse(v);
+  } catch {}
+  return [];
+};
+const serializeChanges = (arr) => JSON.stringify((arr || []).map(String));
+
+// Public: liste (externe)
+app.get('/public/changelog', async (_req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const rows = await prisma.changelog.findMany({
+      orderBy: [{ date: 'desc' }, { id: 'desc' }]
+    });
+    res.json(rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      version: r.version,
+      date: r.date.toISOString().slice(0, 10),
+      changes: parseChanges(r.changes)
+    })));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch changelog' });
+  }
+});
+
+// Admin (interne)
+app.get('/changelog', requireAuth, async (_req, res) => {
+  if (!ensureDB(res)) return;
+  const rows = await prisma.changelog.findMany({ orderBy: [{ date: 'desc' }, { id: 'desc' }] });
+  res.json(rows.map(r => ({ ...r, changes: parseChanges(r.changes) })));
+});
+
+app.post('/changelog', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  const { title, version, date, changes } = req.body || {};
+  if (!title || !version) return res.status(400).json({ error: 'title & version requis' });
+  const created = await prisma.changelog.create({
+    data: {
+      title,
+      version,
+      date: date ? new Date(date) : new Date(),
+      changes: serializeChanges(changes)
+    }
+  });
+  res.status(201).json({ ...created, changes: parseChanges(created.changes) });
+});
+
+app.put('/changelog/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  const id = parseInt(req.params.id);
+  const { title, version, date, changes } = req.body || {};
+  const updated = await prisma.changelog.update({
+    where: { id },
+    data: {
+      title: title ?? undefined,
+      version: version ?? undefined,
+      date: date ? new Date(date) : undefined,
+      changes: changes ? serializeChanges(changes) : undefined
+    }
+  });
+  res.json({ ...updated, changes: parseChanges(updated.changes) });
+});
+
+app.delete('/changelog/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  const id = parseInt(req.params.id);
+  await prisma.changelog.delete({ where: { id } });
+  res.status(204).end();
+});
