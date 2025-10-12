@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Heading, VStack, HStack, Button, Input, Textarea, Table, Thead, Tbody, Tr, Th, Td,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
-  useDisclosure, useToast, IconButton, Text
+  useDisclosure, useToast, IconButton, Text, Switch, FormControl, FormLabel, Image
 } from '@chakra-ui/react';
 import { FiPlus, FiTrash2, FiEdit } from 'react-icons/fi';
 
@@ -14,6 +14,8 @@ export default function SiteManagement() {
   const [loading, setLoading] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [form, setForm] = useState({ id: null, title: '', version: '', date: '', changesText: '' });
+  const [maint, setMaint] = useState({ maintenanceEnabled: false, maintenanceMessage: '', maintenanceImage: '' });
+  const [savingMaint, setSavingMaint] = useState(false);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -79,8 +81,85 @@ export default function SiteManagement() {
     }
   };
 
+  const loadMaint = async () => {
+    try {
+      const r = await fetch(`${API}/site-settings`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }});
+      if (r.ok) setMaint(await r.json());
+    } catch {}
+  };
+  useEffect(() => { loadMaint(); }, []);
+
+  const saveMaint = async () => {
+    setSavingMaint(true);
+    try {
+      const r = await fetch(`${API}/site-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ maintenanceEnabled: maint.maintenanceEnabled, maintenanceMessage: maint.maintenanceMessage })
+      });
+      if (!r.ok) throw new Error();
+      toast({ status:'success', title:'Maintenance mise à jour' });
+    } catch {
+      toast({ status:'error', title:'Échec sauvegarde maintenance' });
+    } finally {
+      setSavingMaint(false);
+    }
+  };
+
+  const uploadMaintImage = async (file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    try {
+      const r = await fetch(`${API}/site-settings/maintenance-image`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: fd
+      });
+      if (!r.ok) throw new Error();
+      const j = await r.json();
+      setMaint(prev => ({ ...prev, maintenanceImage: j.maintenanceImage }));
+      toast({ status:'success', title:'Image de maintenance enregistrée' });
+    } catch {
+      toast({ status:'error', title:'Échec upload image maintenance' });
+    }
+  };
+
   return (
     <Box p={6}>
+      <HStack justify="space-between" mb={4}>
+        <Heading size="lg">Gestion du Site</Heading>
+      </HStack>
+
+      {/* Bloc Maintenance */}
+      <Box borderWidth="1px" borderRadius="md" p={4} mb={6} bg="yellow.50">
+        <Heading size="md" mb={3}>Mode maintenance</Heading>
+        <VStack align="stretch" spacing={3}>
+          <FormControl display="flex" alignItems="center">
+            <FormLabel mb="0">Activer</FormLabel>
+            <Switch isChecked={maint.maintenanceEnabled} onChange={(e) => setMaint(m => ({ ...m, maintenanceEnabled: e.target.checked }))} />
+          </FormControl>
+
+          <Textarea
+            placeholder="Message optionnel affiché pendant la maintenance"
+            value={maint.maintenanceMessage || ''}
+            onChange={(e) => setMaint(m => ({ ...m, maintenanceMessage: e.target.value }))}
+          />
+
+          <HStack>
+            <Input type="file" accept="image/*" onChange={(e) => uploadMaintImage(e.target.files?.[0])} />
+            <Button onClick={saveMaint} isLoading={savingMaint} colorScheme="yellow">Enregistrer</Button>
+          </HStack>
+
+          {maint.maintenanceImage && (
+            <Box>
+              <Text fontSize="sm" color="gray.600" mb={1}>Aperçu</Text>
+              <Image src={maint.maintenanceImage} alt="Maintenance" maxH="200px" borderRadius="md" />
+            </Box>
+          )}
+        </VStack>
+      </Box>
+
       <HStack justify="space-between" mb={4}>
         <Heading size="lg">Gestion du Site — Changelog</Heading>
         <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={openNew}>Nouvelle entrée</Button>

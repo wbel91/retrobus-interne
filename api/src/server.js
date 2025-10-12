@@ -348,6 +348,66 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 const galleryStorage = multer.memoryStorage();
 // 6 MB par fichier (galerie et fond)
 const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 6 * 1024 * 1024 } });
+// ...imports existants...
+import multer from 'multer';
+// ...en haut, on a déjà uploadLarge; on peut réutiliser memoryStorage:
+const settingsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } });
+
+// Helper: read or init settings
+async function getOrInitSettings() {
+  let s = await prisma.siteSettings.findUnique({ where: { id: 1 } });
+  if (!s) {
+    s = await prisma.siteSettings.create({ data: { id: 1, maintenanceEnabled: false } });
+  }
+  return s;
+}
+
+// Admin: récupérer la config (interne)
+app.get('/site-settings', requireAuth, async (_req, res) => {
+  if (!ensureDB(res)) return;
+  const s = await getOrInitSettings();
+  res.json(s);
+});
+
+// Admin: modifier maintenance (interne)
+app.put('/site-settings', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  const { maintenanceEnabled, maintenanceMessage } = req.body || {};
+  const updated = await prisma.siteSettings.update({
+    where: { id: 1 },
+    data: {
+      maintenanceEnabled: typeof maintenanceEnabled === 'boolean' ? maintenanceEnabled : undefined,
+      maintenanceMessage: maintenanceMessage ?? undefined
+    }
+  });
+  res.json(updated);
+});
+
+// Admin: upload image de maintenance (interne)
+app.post('/site-settings/maintenance-image', requireAuth, settingsUpload.single('image'), async (req, res) => {
+  if (!ensureDB(res)) return;
+  if (!req.file) return res.status(400).json({ error: 'image requis' });
+  const base64 = req.file.buffer.toString('base64');
+  const mimeType = req.file.mimetype || 'image/png';
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+  const updated = await prisma.siteSettings.update({
+    where: { id: 1 },
+    data: { maintenanceImage: dataUrl }
+  });
+  res.json({ maintenanceImage: updated.maintenanceImage });
+});
+
+// Public: exposer la config minimale (externe)
+app.get('/public/site-config', async (_req, res) => {
+  if (!ensureDB(res)) return;
+  const s = await getOrInitSettings();
+  // ne retourne que ce qui est nécessaire côté public
+  res.json({
+    maintenanceEnabled: s.maintenanceEnabled,
+    maintenanceImage: s.maintenanceImage,
+    maintenanceMessage: s.maintenanceMessage || null
+  });
+});
 
 // ---------- Vehicles (private) ----------
 app.get('/vehicles', requireAuth, async (_req, res) => {

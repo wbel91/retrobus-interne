@@ -68,18 +68,11 @@ export default function MyRBE() {
         <Card
           as={RouterLink}
           to="/dashboard/site-management"
-          key="Gestion du Site"
           bg="purple.100"
-          _hover={{ boxShadow: "lg", transform: "scale(1.03)" }}
-          transition="all 0.2s"
-          cursor="pointer"
+          _hover={{ bg:'purple.200' }}
         >
-          <CardHeader>
-            <Heading size="md">Gestion du Site</Heading>
-          </CardHeader>
-          <CardBody>
-            <Text>Changelog, pages publiques, etc.</Text>
-          </CardBody>
+          <CardHeader fontWeight="bold">Gestion du Site</CardHeader>
+          <CardBody>Maintenance, changelog…</CardBody>
         </Card>
       </SimpleGrid>
     </Box>

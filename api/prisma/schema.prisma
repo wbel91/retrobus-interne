@@ -273,3 +273,11 @@ model Changelog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model SiteSettings {
+  id                 Int      @id @default(1)
+  maintenanceEnabled Boolean  @default(false)
+  maintenanceImage   String?  // data URL (image uploadée)
+  maintenanceMessage String?  // message optionnel
+  updatedAt          DateTime @updatedAt
+}
