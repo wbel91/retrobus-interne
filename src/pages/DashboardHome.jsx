@@ -51,21 +51,49 @@ export default function DashboardHome() {
 
   useEffect(() => {
     let mounted = true;
+
+    const API = import.meta.env.VITE_API_URL || ''; // e.g., https://<your-railway>.up.railway.app
+    const token = localStorage.getItem('token');
+
+    function labelOf(v) {
+      const parts = [];
+      if (v.marque) parts.push(v.marque);
+      if (v.modele) parts.push(v.modele);
+      const base = parts.join(' ') || v.parc || v.id || '—';
+      return v.subtitle ? `${base} — ${v.subtitle}` : base;
+    }
+
     async function fetchRecent() {
       try {
-        const res = await fetch("/api/vehicles?limit=5");
+        if (!API) throw new Error('VITE_API_URL not set');
+        const res = await fetch(`${API}/vehicles`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : ''
+          }
+        });
         if (!mounted) return;
+
         if (!res.ok) {
+          // fallback demo row if unauthorized or other error
           setRecent([{ id: "RBE-001", name: "RBE 920", parc: "Parc A" }]);
           return;
         }
+
         const data = await res.json();
-        setRecent(Array.isArray(data) ? data.slice(0,5) : []);
+        const list = Array.isArray(data) ? data : [];
+        // Normalize to { id, name, parc } and slice 5
+        const normalized = list.slice(0, 5).map(v => ({
+          id: v.parc || v.id,
+          name: labelOf(v),
+          parc: v.parc
+        }));
+        setRecent(normalized);
       } catch (e) {
         if (!mounted) return;
         setRecent([{ id: "RBE-001", name: "RBE 920", parc: "Parc A" }]);
       }
     }
+
     fetchRecent();
     return () => { mounted = false; };
   }, []);

@@ -1808,3 +1808,27 @@ app.delete('/changelog/:id', requireAuth, async (req, res) => {
   await prisma.changelog.delete({ where: { id } });
   res.status(204).end();
 });
+
+// Backward-compatible aliases for old "/api/vehicles" paths
+app.get('/api/vehicles', requireAuth, async (_req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const vehicles = await prisma.vehicle.findMany({ orderBy: { parc: 'asc' } });
+    res.json(vehicles.map(transformVehicle));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch vehicles' });
+  }
+});
+
+app.get('/api/vehicles/:parc', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const vehicle = await prisma.vehicle.findUnique({ where: { parc: req.params.parc } });
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+    res.json(transformVehicle(vehicle));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch vehicle' });
+  }
+});
