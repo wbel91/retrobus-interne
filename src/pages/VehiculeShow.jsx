@@ -501,7 +501,7 @@ export default function VehiculeShow() {
             leftIcon={<FiExternalLink />}
             colorScheme="blue"
             variant="outline"
-            onClick={() => window.open(`${PUBLIC_BASE}/vehicles/${parc}`, '_blank')}
+            onClick={() => window.open(PUBLIC_BASE + '/vehicles/' + parc, '_blank')}
           >
             👁️ Voir la page publique
           </Button>
