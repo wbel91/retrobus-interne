@@ -168,16 +168,25 @@ const transformVehicle = (vehicle) => {
   let caract = [];
   try { 
     const parsed = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : [];
-    // Si c'est un tableau label/value, le garder tel quel
-    // Si c'est un objet, le convertir en tableau label/value
+    
+    // ✅ Détecter le format et l'adapter
     if (Array.isArray(parsed)) {
+      // Format label/value - garder tel quel
       caract = parsed;
-    } else {
-      caract = Object.entries(parsed).map(([label, value]) => ({ label, value }));
+    } else if (typeof parsed === 'object') {
+      // Format objet - convertir en label/value
+      caract = Object.entries(parsed).map(([key, value]) => ({
+        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+        value: value
+      }));
     }
-  } catch {}
+  } catch(e) {
+    console.error('Erreur parsing caracteristiques:', e);
+    caract = [];
+  }
   
   const gallery = parseJsonField(vehicle.gallery) || [];
+  
   return {
     id: vehicle.id,
     parc: vehicle.parc,

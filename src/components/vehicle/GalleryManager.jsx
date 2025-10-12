@@ -47,19 +47,46 @@ export default function GalleryManager({
     setUploading(true);
     const fd = new FormData();
     [...files].forEach(f => fd.append('images', f));
+    
+    console.log('🔍 Upload debug:', {
+      endpoint: uploadEndpoint,
+      filesCount: files.length,
+      hasAuth: !!authHeader
+    });
+    
     try {
-      const res = await fetch(uploadEndpoint, { method:'POST', headers:{ 'Authorization': authHeader }, body: fd });
+      const res = await fetch(uploadEndpoint, { 
+        method:'POST', 
+        headers:{ 'Authorization': authHeader }, 
+        body: fd 
+      });
+      
+      console.log('📡 Upload response:', {
+        status: res.status,
+        statusText: res.statusText,
+        headers: Object.fromEntries(res.headers)
+      });
+      
       if (!res.ok) {
-        const txt = await res.text().catch(()=> '' );
-        console.error('Upload failed', res.status, txt);
-        throw new Error();
+        const txt = await res.text().catch(()=> '');
+        console.error('❌ Upload failed:', res.status, txt);
+        toast({ 
+          status: 'error', 
+          title: 'Échec upload',
+          description: `Erreur ${res.status}: ${txt || res.statusText}`
+        });
+        throw new Error(`HTTP ${res.status}: ${txt}`);
       }
       const j = await res.json();
       onChange(j.gallery || []);
       toast({ status: 'success', title: 'Images ajoutées' });
     } catch (err) {
       console.error('Upload error', err);
-      toast({ status: 'error', title: 'Échec upload' });
+      toast({ 
+        status: 'error', 
+        title: 'Échec upload',
+        description: err.message || 'Erreur réseau'
+      });
     } finally {
       setUploading(false);
     }
