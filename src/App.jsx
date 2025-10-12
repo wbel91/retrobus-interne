@@ -14,6 +14,7 @@ import VehiculeShow from "./pages/VehiculeShow";
 import Evenements from "./pages/Evenements";
 import EventsManagement from "./pages/EventsManagement";
 import TestEventsPage from "./pages/TestEventsPage"; // Page de test
+import SiteManagement from "./pages/SiteManagement"; // Gestion du site
 import Adhesion from "./pages/Adhesion";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
@@ -52,6 +53,9 @@ export default function App() {
         
         {/* Route finale pour la gestion des événements */}
         <Route path="/dashboard/events-management" element={<ProtectedRoute><EventsManagement /></ProtectedRoute>} />
+        
+        {/* Gestion du site */}
+        <Route path="/dashboard/site-management" element={<ProtectedRoute><SiteManagement /></ProtectedRoute>} />
         
         <Route path="/dashboard/newsletter" element={<ProtectedRoute><Newsletter /></ProtectedRoute>} />
         <Route path="/dashboard/members-management" element={<ProtectedRoute><MembersManagement /></ProtectedRoute>} />

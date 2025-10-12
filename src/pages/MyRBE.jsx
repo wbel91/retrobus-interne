@@ -35,6 +35,11 @@ const cards = [
     color: "purple.100",
   },
   {
+    title: "Gestion du Site",
+    to: "/dashboard/site-management",
+    color: "orange.100",
+  },
+  {
     title: "Retromail",
     to: "/retromail",
     color: "cyan.100",
