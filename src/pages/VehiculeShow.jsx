@@ -116,8 +116,8 @@ function BackgroundImageManager({ vehicle, parc, onChange, authHeader }) {
     }
   };
 
-  const backgroundImage = vehicle.backgroundImage || (vehicle.gallery?.[0]);
-  const backgroundPosition = vehicle.backgroundPosition || 'center';
+  const backgroundImage = vehicle.backgroundImage ?? null;
+  const backgroundPosition = backgroundImage ? (vehicle.backgroundPosition || 'center') : 'center';
 
   return (
     <VStack spacing={4} align="stretch">
