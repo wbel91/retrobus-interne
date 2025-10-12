@@ -16,18 +16,36 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
 
-// ---------- CORS SIMPLIFIE ----------
+// ---------- CORS (dynamic + credentials-safe) ----------
 app.use((req, res, next) => {
-  // Headers CORS permissifs
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  const allowed = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // If no list provided, allow all origins safely without credentials
+  const isAllowed = origin && (allowed.length === 0 || allowed.includes(origin));
+
+  if (isAllowed && origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true'); // only with a specific origin
+    res.setHeader('Vary', 'Origin');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // public, no credentials
+  }
+
+  // Allow methods and requested headers (important for Authorization)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  const reqHeaders = req.headers['access-control-request-headers'];
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    reqHeaders || 'Content-Type, Authorization, X-Requested-With, Accept'
+  );
 
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
-
   return next();
 });
 
@@ -1692,8 +1710,8 @@ app.use((err, req, res, _next) => {
 
     if (allowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
     } else if (publicPath) {
       res.setHeader('Access-Control-Allow-Origin', '*');
     }
