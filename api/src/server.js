@@ -163,30 +163,38 @@ app.get('/public/ping', (_req, res) => {
 });
 
 // ---------- Transforms ----------
+function toText(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.map(toText).join(', ');
+  if (typeof v === 'object') return Object.values(v).map(toText).join(', ');
+  return String(v);
+}
+
 const transformVehicle = (vehicle) => {
   if (!vehicle) return null;
   let caract = [];
-  try { 
+  try {
     const parsed = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : [];
-    
-    // ✅ Détecter le format et l'adapter
+
     if (Array.isArray(parsed)) {
-      // Format label/value - garder tel quel
-      caract = parsed;
-    } else if (typeof parsed === 'object') {
-      // Format objet - convertir en label/value
+      // normalize label/value
+      caract = parsed.map(it => ({
+        label: toText(it?.label),
+        value: toText(it?.value)
+      }));
+    } else if (typeof parsed === 'object' && parsed) {
+      // object map -> label/value array
       caract = Object.entries(parsed).map(([key, value]) => ({
         label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
-        value: value
+        value: toText(value)
       }));
     }
   } catch(e) {
     console.error('Erreur parsing caracteristiques:', e);
     caract = [];
   }
-  
+
   const gallery = parseJsonField(vehicle.gallery) || [];
-  
   return {
     id: vehicle.id,
     parc: vehicle.parc,
