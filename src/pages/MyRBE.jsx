@@ -21,12 +21,12 @@ const cards = [
   },
   {
     title: "Gestion des Événements",
-    to: "/dashboard/events-management", // Route correcte vers EventsManagement
+    to: "/dashboard/events-management",
     color: "green.100",
   },
   {
     title: "Gérer les adhésions",
-    to: "/members",
+    to: "/dashboard/members-management",
     color: "blue.100",
   },
   {
@@ -35,9 +35,9 @@ const cards = [
     color: "purple.100",
   },
   {
-    title: "Gestion du Site",
-    to: "/dashboard/site-management",
-    color: "teal.100", // couleur distincte
+    title: "Retromail",
+    to: "/retromail",
+    color: "cyan.100",
   },
 ];
 

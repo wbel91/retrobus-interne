@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import ForcePasswordChange from '../components/ForcePasswordChange';
 
 const UserContext = createContext(null);
 
@@ -8,6 +9,7 @@ export function UserProvider({ children }) {
     const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
   });
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -40,6 +42,69 @@ export function UserProvider({ children }) {
     localStorage.removeItem('user');
   };
 
+  const login = async (username, password) => {
+    const base = import.meta.env.VITE_API_URL;
+    if (!base) throw new Error('API non configurée (VITE_API_URL manquante)');
+    
+    const endpoint = /^\d{4}-\d{3}$/.test(username) ? '/auth/member-login' : '/auth/login';
+    
+    const res = await fetch(`${base}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        [endpoint.includes('member') ? 'matricule' : 'username']: username, 
+        password 
+      })
+    });
+    
+    if (!res.ok) {
+      let msg = 'Échec de connexion';
+      try {
+        const j = await res.json();
+        if (j.error) msg = j.error;
+      } catch {}
+      throw new Error(msg);
+    }
+    
+    const data = await res.json();
+    
+    // Vérifier si changement de mot de passe obligatoire
+    if (data.user?.mustChangePassword) {
+      setMustChangePassword(true);
+    }
+    
+    return data;
+  };
+
+  const handlePasswordChanged = () => {
+    setMustChangePassword(false);
+    // Rafraîchir les données utilisateur
+    if (token) {
+      fetchUserData();
+    }
+  };
+
+  // Fonction pour récupérer les données utilisateur
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const userData = await response.json();
+      setUser(userData);
+      setMustChangePassword(userData.mustChangePassword || false);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    }
+  };
+
+  // Effet pour récupérer les données utilisateur au chargement
+  useEffect(() => {
+    if (token) {
+      fetchUserData();
+    }
+  }, [token]);
+
   const value = useMemo(
     () => ({
       token,
@@ -58,7 +123,17 @@ export function UserProvider({ children }) {
     [token, user, isAuthenticated, username, prenom, nom, roles, isAdmin, matricule]
   );
 
-  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
+  return (
+    <UserContext.Provider value={value}>
+      {children}
+      
+      {/* Modal de changement de mot de passe obligatoire */}
+      <ForcePasswordChange
+        isOpen={mustChangePassword}
+        onPasswordChanged={handlePasswordChanged}
+      />
+    </UserContext.Provider>
+  );
 }
 
 export function useUser() {
@@ -67,23 +142,4 @@ export function useUser() {
     throw new Error("useUser must be used within a UserProvider");
   }
   return context;
-}
-
-export async function login(username, password) {
-  const base = import.meta.env.VITE_API_URL;
-  if (!base) throw new Error('API non configurée (VITE_API_URL manquante)');
-  const res = await fetch(`${base}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  if (!res.ok) {
-    let msg = 'Échec de connexion';
-    try {
-      const j = await res.json();
-      if (j.error) msg = j.error;
-    } catch {}
-    throw new Error(msg);
-  }
-  return res.json();
 }

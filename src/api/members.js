@@ -1,45 +1,34 @@
-import { apiClient } from './config.js';
+import { apiClient, API_BASE_URL } from './config.js';
 
 export const membersAPI = {
-  // Récupérer tous les adhérents avec pagination et filtres
-  getAll: (params) => apiClient.get('/api/members', { params }),
+  baseURL: API_BASE_URL,
   
-  // Récupérer un adhérent par ID
-  getById: async (id) => {
-    return apiClient.get(`/api/members/${id}`);
-  },
-  
-  // Créer un nouvel adhérent
-  create: (data) => apiClient.post('/api/members', data),
-  
-  // Mettre à jour un adhérent
-  update: (id, data) => apiClient.put(`/api/members/${id}`, data),
-  
-  // Supprimer un adhérent
-  delete: (id) => apiClient.delete(`/api/members/${id}`),
-  
-  // Récupérer les statistiques
-  getStats: async () => {
-    try {
-      return await apiClient.get('/api/members/stats');
-    } catch (e) {
-      // En production, certains déploiements peuvent ne pas exposer cette route.
-      // Si 404, retourner des stats vides pour éviter les erreurs UI.
-      if (e && typeof e.message === 'string' && e.message.includes('404')) {
-        return {
-          totalMembers: 0,
-          activeMembers: 0,
-          expiredMembers: 0,
-          pendingMembers: 0,
-          membersWithInternalAccess: 0,
-          recentJoins: 0,
-          drivers: 0
-        };
-      }
-      throw e;
-    }
+  async getAll() {
+    const response = await apiClient.get('/members');
+    return response.data;
   },
 
-  // Profil du membre courant
-  getMe: () => apiClient.get('/api/me')
+  async getById(id) {
+    const response = await apiClient.get(`/members/${id}`);
+    return response.data;
+  },
+
+  async createWithLogin(memberData) {
+    const response = await apiClient.post('/members/create-with-login', memberData);
+    return response.data;
+  },
+
+  async update(id, updates) {
+    const response = await apiClient.patch(`/members/${id}`, updates);
+    return response.data;
+  },
+
+  async resetPassword(id) {
+    const response = await apiClient.post(`/members/${id}/reset-password`);
+    return response.data;
+  },
+
+  async delete(id) {
+    await apiClient.delete(`/members/${id}`);
+  }
 };

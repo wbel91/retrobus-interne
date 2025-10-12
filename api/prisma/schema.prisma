@@ -215,6 +215,16 @@ model Member {
   hasInternalAccess        Boolean   @default(false)
   internalPassword         String?
   
+  // Système de connexion
+  matricule                String?   @unique // Identifiant de connexion
+  loginEnabled            Boolean   @default(false)
+  temporaryPassword       String?   // Mot de passe temporaire généré
+  mustChangePassword      Boolean   @default(false) // Force changement à la première connexion
+  lastLoginAt             DateTime? // Dernière connexion
+  passwordChangedAt       DateTime? // Dernière modification du mot de passe
+  loginAttempts           Int       @default(0) // Tentatives de connexion échouées
+  lockedUntil             DateTime? // Verrouillage temporaire après trop de tentatives
+  
   // Informations conducteur
   driverLicense            String?
   licenseExpiryDate        DateTime?
@@ -272,21 +282,4 @@ model Changelog {
   changes   String   // JSON.stringify(string[])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-
-model SiteSettings {
-  id                 Int      @id @default(1)
-  maintenanceEnabled Boolean  @default(false)
-  maintenanceImage   String?
-  maintenanceMessage String?
-
-  // New global header & logo config
-  headerImageDesktop     String?
-  headerImageMobile      String?
-  headerPositionDesktop  String?
-  headerPositionMobile   String?
-  logoMain               String?
-  logoInverted           String?
-
-  updatedAt          DateTime @updatedAt
 }

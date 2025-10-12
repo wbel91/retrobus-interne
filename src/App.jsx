@@ -20,7 +20,7 @@ import MobileVehicle from "./pages/MobileVehicle";
 import Retromail from "./pages/Retromail";
 import Newsletter from "./pages/Newsletter";
 import Members from "./pages/Members";
-import SiteManagement from "./pages/SiteManagement.jsx"; // <-- ajouter ceci
+import MembersManagement from "./pages/MembersManagement.jsx";
 
 export default function App() {
   const { isAuthenticated } = useUser();
@@ -54,21 +54,12 @@ export default function App() {
         <Route path="/dashboard/events-management" element={<ProtectedRoute><EventsManagement /></ProtectedRoute>} />
         
         <Route path="/dashboard/newsletter" element={<ProtectedRoute><Newsletter /></ProtectedRoute>} />
+        <Route path="/dashboard/members-management" element={<ProtectedRoute><MembersManagement /></ProtectedRoute>} />
         <Route path="/adhesion" element={<ProtectedRoute><Adhesion /></ProtectedRoute>} />
         <Route path="/mobile/v/:parc" element={<ProtectedRoute><MobileVehicle /></ProtectedRoute>} />
         <Route path="/retromail" element={<ProtectedRoute><Retromail /></ProtectedRoute>} />
         <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
         
-        {/* Ajoute cette route protégée */}
-        <Route
-          path="/dashboard/site-management"
-          element={
-            <ProtectedRoute>
-              <SiteManagement />
-            </ProtectedRoute>
-          }
-        />
-
         <Route path="*" element={<ProtectedRoute><DashboardHome /></ProtectedRoute>} />
       </Routes>
     </>

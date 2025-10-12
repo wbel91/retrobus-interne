@@ -285,199 +285,120 @@ app.post('/auth/login', (req, res) => {
 // Connexion membre (matricule/email + mot de passe interne)
 app.post('/auth/member-login', async (req, res) => {
   if (!ensureDB(res)) return;
+  
   try {
-    const { identifier, password } = req.body || {};
-    if (!identifier || !password) {
-      return res.status(400).json({ error: 'identifier & password requis' });
+    const { matricule, password } = req.body;
+
+    if (!matricule || !password) {
+      return res.status(400).json({ error: 'Matricule et mot de passe requis' });
     }
-    const where = identifier.includes('@')
-      ? { email: identifier }
-      : { memberNumber: identifier };
-    const member = await prisma.member.findUnique({ where });
-    if (!member || !member.hasInternalAccess || !member.internalPassword) {
-      return res.status(401).json({ error: 'Accès refusé' });
+
+    // Trouver le membre
+    const member = await prisma.member.findUnique({
+      where: { matricule }
+    });
+
+    if (!member || !member.loginEnabled) {
+      return res.status(401).json({ error: 'Matricule invalide ou accès désactivé' });
     }
-    const ok = await bcrypt.compare(password, member.internalPassword);
-    if (!ok) return res.status(401).json({ error: 'Identifiants invalides' });
+
+    // Vérifier verrouillage
+    if (member.lockedUntil && member.lockedUntil > new Date()) {
+      return res.status(423).json({ 
+        error: 'Compte temporairement verrouillé. Réessayez plus tard.' 
+      });
+    }
+
+    // Vérifier mot de passe
+    const passwordToCheck = member.temporaryPassword || member.internalPassword;
+    if (!passwordToCheck || !(await verifyPassword(password, passwordToCheck))) {
+      // Incrémenter tentatives échouées
+      const attempts = member.loginAttempts + 1;
+      const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null; // 15 min
+
+      await prisma.member.update({
+        where: { id: member.id },
+        data: {
+          loginAttempts: attempts,
+          lockedUntil
+        }
+      });
+
+      return res.status(401).json({ error: 'Mot de passe incorrect' });
+    }
+
+    // Connexion réussie - réinitialiser tentatives
+    await prisma.member.update({
+      where: { id: member.id },
+      data: {
+        loginAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date()
+      }
+    });
+
+    // Générer token JWT
     const token = issueToken({
-      memberId: member.id,
-      memberNumber: member.memberNumber,
-      prenom: member.firstName,
-      nom: member.lastName,
+      userId: member.id,
+      username: member.matricule,
+      role: member.role,
       type: 'member'
     });
+
     res.json({
       token,
       user: {
-        username: member.memberNumber,
+        id: member.id,
+        username: member.matricule,
         prenom: member.firstName,
         nom: member.lastName,
-        roles: ['MEMBER'],
-        memberId: member.id
+        email: member.email,
+        role: member.role,
+        matricule: member.matricule,
+        mustChangePassword: member.mustChangePassword,
+        roles: [member.role] // Compatibilité avec le système existant
       }
     });
-  } catch (e) {
-    console.error('Erreur member-login:', e);
-    res.status(500).json({ error: 'Erreur serveur' });
+
+  } catch (error) {
+    console.error('Error in member login:', error);
+    res.status(500).json({ error: 'Erreur de connexion' });
   }
 });
 
 // Profil membre courant
-app.get('/api/me', authenticateToken, async (req, res) => {
+app.get('/api/me', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const memberId = req.user?.memberId;
-    if (!memberId) return res.status(400).json({ error: 'Token sans memberId' });
-    const member = await prisma.member.findUnique({
-      where: { id: memberId },
-      select: {
-        id: true,
-        memberNumber: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        address: true,
-        city: true,
-        postalCode: true,
-        membershipType: true,
-        membershipStatus: true,
-        joinDate: true,
-        renewalDate: true,
-        lastPaymentDate: true,
-        paymentAmount: true,
-        paymentMethod: true,
-        role: true,
-        hasInternalAccess: true,
-        hasExternalAccess: true,
-        notifications: true,
-        newsletter: true
-      }
-    });
-    if (!member) return res.status(404).json({ error: 'Membre introuvable' });
-    res.json(member);
+    if (req.user.type === 'member') {
+      // Utilisateur membre connecté via matricule
+      const member = await prisma.member.findUnique({ where: { id: req.user.userId } });
+      if (!member) return res.status(404).json({ error: 'Membre introuvable' });
+      
+      res.json({
+        id: member.id,
+        username: member.matricule,
+        prenom: member.firstName,
+        nom: member.lastName,
+        email: member.email,
+        role: member.role,
+        matricule: member.matricule,
+        mustChangePassword: member.mustChangePassword,
+        roles: [member.role]
+      });
+    } else {
+      // Utilisateur admin classique - logique existante
+      res.json({
+        username: req.user.username,
+        prenom: req.user.prenom || '',
+        nom: req.user.nom || '',
+        roles: req.user.roles || []
+      });
+    }
   } catch (e) {
     console.error('Erreur /api/me:', e);
     res.status(500).json({ error: 'Erreur serveur' });
   }
-});
-
-// ---------- Multer storages ----------
-const galleryStorage = multer.memoryStorage();
-// 6 MB par fichier (galerie et fond)
-const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 6 * 1024 * 1024 } });
-
-// Uploader for site settings (same memoryStorage pattern)
-const settingsUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // was 6MB
-});
-
-// Helper: read or init settings
-async function getOrInitSettings() {
-  let s = await prisma.siteSettings.findUnique({ where: { id: 1 } });
-  if (!s) {
-    s = await prisma.siteSettings.create({ data: { id: 1, maintenanceEnabled: false } });
-  }
-  return s;
-}
-
-// Admin: récupérer la config (interne)
-app.get('/site-settings', requireAuth, async (_req, res) => {
-  if (!ensureDB(res)) return;
-  const s = await getOrInitSettings();
-  res.json(s);
-});
-
-// Admin: modifier maintenance + header positions (interne)
-app.put('/site-settings', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  const {
-    maintenanceEnabled,
-    maintenanceMessage,
-    headerPositionDesktop,
-    headerPositionMobile
-  } = req.body || {};
-  const updated = await prisma.siteSettings.update({
-    where: { id: 1 },
-    data: {
-      maintenanceEnabled: typeof maintenanceEnabled === 'boolean' ? maintenanceEnabled : undefined,
-      maintenanceMessage: maintenanceMessage ?? undefined,
-      headerPositionDesktop: typeof headerPositionDesktop === 'string' ? headerPositionDesktop : undefined,
-      headerPositionMobile: typeof headerPositionMobile === 'string' ? headerPositionMobile : undefined
-    }
-  });
-  res.json(updated);
-});
-
-// Admin: upload image de maintenance (interne)
-app.post('/site-settings/maintenance-image', requireAuth, settingsUpload.single('image'), async (req, res) => {
-  if (!ensureDB(res)) return;
-  if (!req.file) return res.status(400).json({ error: 'image requis' });
-  const base64 = req.file.buffer.toString('base64');
-  const mimeType = req.file.mimetype || 'image/png';
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-  const updated = await prisma.siteSettings.update({
-    where: { id: 1 },
-    data: { maintenanceImage: dataUrl }
-  });
-  res.json({ maintenanceImage: updated.maintenanceImage });
-});
-
-// Admin: upload header image (desktop|mobile)
-app.post('/site-settings/header-image', requireAuth, settingsUpload.single('image'), async (req, res) => {
-  if (!ensureDB(res)) return;
-  const target = String(req.query.target || '').toLowerCase();
-  if (!['desktop','mobile'].includes(target)) {
-    return res.status(400).json({ error: "query target must be 'desktop' or 'mobile'" });
-  }
-  if (!req.file) return res.status(400).json({ error: 'image requis' });
-  const base64 = req.file.buffer.toString('base64');
-  const mimeType = req.file.mimetype || 'image/png';
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-  const field = target === 'desktop' ? 'headerImageDesktop' : 'headerImageMobile';
-  const updated = await prisma.siteSettings.update({
-    where: { id: 1 },
-    data: { [field]: dataUrl }
-  });
-  res.json({ [field]: updated[field] });
-});
-
-// Admin: upload logo (main|inverted)
-app.post('/site-settings/logo', requireAuth, settingsUpload.single('image'), async (req, res) => {
-  if (!ensureDB(res)) return;
-  const variant = String(req.query.variant || '').toLowerCase();
-  if (!['main','inverted'].includes(variant)) {
-    return res.status(400).json({ error: "query variant must be 'main' or 'inverted'" });
-  }
-  if (!req.file) return res.status(400).json({ error: 'image requis' });
-  const base64 = req.file.buffer.toString('base64');
-  const mimeType = req.file.mimetype || 'image/png';
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-  const field = variant === 'main' ? 'logoMain' : 'logoInverted';
-  const updated = await prisma.siteSettings.update({
-    where: { id: 1 },
-    data: { [field]: dataUrl }
-  });
-  res.json({ [field]: updated[field] });
-});
-
-// Public: exposer la config minimale (externe)
-app.get('/public/site-config', async (_req, res) => {
-  if (!ensureDB(res)) return;
-  const s = await getOrInitSettings();
-  res.json({
-    maintenanceEnabled: s.maintenanceEnabled,
-    maintenanceImage: s.maintenanceImage,
-    maintenanceMessage: s.maintenanceMessage || null,
-    // New: public header/logo
-    headerImageDesktop: s.headerImageDesktop || null,
-    headerImageMobile: s.headerImageMobile || null,
-    headerPositionDesktop: s.headerPositionDesktop || null,
-    headerPositionMobile: s.headerPositionMobile || null,
-    logoMain: s.logoMain || null,
-    logoInverted: s.logoInverted || null
-  });
 });
 
 // ---------- Vehicles (private) ----------
@@ -635,7 +556,7 @@ app.delete('/vehicles/:parc', requireAuth, async (req, res) => {
 });
 
 // ---------- Galerie upload ----------
-app.post('/vehicles/:parc/gallery', requireAuth, uploadLarge.array('images', 10), async (req, res) => {
+app.post('/vehicles/:parc/gallery', requireAuth, documentsUpload.array('images', 10), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
@@ -698,7 +619,7 @@ app.delete('/vehicles/:parc/gallery', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/vehicles/:parc/background', requireAuth, uploadLarge.single('image'), async (req, res) => {
+app.post('/vehicles/:parc/background', requireAuth, documentsUpload.single('image'), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
@@ -1881,5 +1802,309 @@ app.get('/api/vehicles/:parc', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to fetch vehicle' });
+  }
+});
+
+// Fonction utilitaire pour générer un mot de passe temporaire
+function generateTemporaryPassword() {
+  const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'; // Exclu O, 0 pour éviter confusion
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Fonction utilitaire pour hasher un mot de passe
+async function hashPassword(password) {
+  return await bcrypt.hash(password, 10);
+}
+
+async function verifyPassword(password, hash) {
+  return await bcrypt.compare(password, hash);
+}
+
+// Transformer un membre pour l'API (enlever données sensibles)
+function transformMember(member) {
+  if (!member) return null;
+  return {
+    id: member.id,
+    memberNumber: member.memberNumber,
+    firstName: member.firstName,
+    lastName: member.lastName,
+    email: member.email,
+    phone: member.phone,
+    address: member.address,
+    city: member.city,
+    postalCode: member.postalCode,
+    birthDate: member.birthDate,
+    membershipType: member.membershipType,
+    membershipStatus: member.membershipStatus,
+    joinDate: member.joinDate,
+    renewalDate: member.renewalDate,
+    role: member.role,
+    hasExternalAccess: member.hasExternalAccess,
+    hasInternalAccess: member.hasInternalAccess,
+    matricule: member.matricule,
+    loginEnabled: member.loginEnabled,
+    mustChangePassword: member.mustChangePassword,
+    lastLoginAt: member.lastLoginAt,
+    passwordChangedAt: member.passwordChangedAt,
+    loginAttempts: member.loginAttempts,
+    lockedUntil: member.lockedUntil,
+    createdAt: member.createdAt,
+    updatedAt: member.updatedAt
+  };
+}
+
+// GET /members - Liste tous les membres (admins seulement)
+app.get('/members', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    // Vérifier que l'utilisateur est admin ou a les droits de voir les membres
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const members = await prisma.member.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json(members.map(transformMember));
+  } catch (error) {
+    console.error('Error fetching members:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des membres' });
+  }
+});
+
+// GET /members/:id - Récupère un membre par ID
+app.get('/members/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    const { id } = req.params;
+    
+    const member = await prisma.member.findUnique({
+      where: { id }
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Membre non trouvé' });
+    }
+
+    res.json(transformMember(member));
+  } catch (error) {
+    console.error('Error fetching member:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération du membre' });
+  }
+});
+
+// POST /members/create-with-login - Créer un adhérent avec identifiants de connexion
+app.post('/members/create-with-login', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const {
+      firstName,
+      lastName,
+      email,
+      matricule,
+      membershipType = 'STANDARD',
+      role = 'MEMBER',
+      hasInternalAccess = false,
+      phone,
+      address,
+      city,
+      postalCode,
+      birthDate
+    } = req.body;
+
+    // Validation
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Prénom, nom et email requis' });
+    }
+
+    if (!matricule || !/^\d{4}-\d{3}$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule requis au format YYYY-XXX (ex: 2025-001)' });
+    }
+
+    // Vérifier unicité email et matricule
+    const existingMember = await prisma.member.findFirst({
+      where: {
+        OR: [
+          { email },
+          { matricule }
+        ]
+      }
+    });
+
+    if (existingMember) {
+      return res.status(400).json({ 
+        error: existingMember.email === email ? 'Email déjà utilisé' : 'Matricule déjà utilisé' 
+      });
+    }
+
+    // Générer mot de passe temporaire
+    const tempPassword = generateTemporaryPassword();
+    const hashedPassword = await hashPassword(tempPassword);
+
+    // Générer numéro d'adhérent unique
+    const year = new Date().getFullYear();
+    const count = await prisma.member.count() + 1;
+    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
+
+    // Créer l'adhérent
+    const member = await prisma.member.create({
+      data: {
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        matricule,
+        membershipType,
+        role,
+        hasInternalAccess,
+        loginEnabled: true,
+        temporaryPassword: hashedPassword,
+        mustChangePassword: true,
+        passwordChangedAt: new Date(),
+        phone,
+        address,
+        city,
+        postalCode,
+        birthDate: birthDate ? new Date(birthDate) : null,
+        createdBy: req.user?.username || 'system'
+      }
+    });
+
+    res.status(201).json({
+      member: transformMember(member),
+      temporaryPassword: tempPassword, // Retourné une seule fois pour l'admin
+      message: `Adhérent créé avec succès. Mot de passe temporaire : ${tempPassword}`
+    });
+
+  } catch (error) {
+    console.error('Error creating member with login:', error);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
+  }
+});
+
+// PATCH /members/:id - Mettre à jour un membre
+app.patch('/members/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    // Filtrer les champs autorisés
+    const allowedFields = [
+      'firstName', 'lastName', 'email', 'phone', 'address', 'city', 'postalCode',
+      'membershipType', 'membershipStatus', 'role', 'hasInternalAccess', 
+      'hasExternalAccess', 'loginEnabled'
+    ];
+
+    const filteredUpdates = Object.keys(updates)
+      .filter(key => allowedFields.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = updates[key];
+        return obj;
+      }, {});
+
+    const updatedMember = await prisma.member.update({
+      where: { id },
+      data: filteredUpdates
+    });
+
+    res.json(transformMember(updatedMember));
+
+  } catch (error) {
+    console.error('Error updating member:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Membre non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la mise à jour' });
+  }
+});
+
+// POST /members/:id/reset-password - Réinitialiser le mot de passe d'un adhérent
+app.post('/members/:id/reset-password', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const { id } = req.params;
+    const member = await prisma.member.findUnique({ where: { id } });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Adhérent non trouvé' });
+    }
+
+    // Générer nouveau mot de passe temporaire
+    const tempPassword = generateTemporaryPassword();
+    const hashedPassword = await hashPassword(tempPassword);
+
+    await prisma.member.update({
+      where: { id },
+      data: {
+        temporaryPassword: hashedPassword,
+        internalPassword: null,
+        mustChangePassword: true,
+        loginAttempts: 0,
+        lockedUntil: null,
+        passwordChangedAt: new Date()
+      }
+    });
+
+    res.json({
+      message: 'Mot de passe réinitialisé',
+      temporaryPassword: tempPassword
+    });
+
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ error: 'Erreur lors de la réinitialisation' });
+  }
+});
+
+// DELETE /members/:id - Supprimer un membre
+app.delete('/members/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const { id } = req.params;
+
+    await prisma.member.delete({
+      where: { id }
+    });
+
+    res.json({ message: 'Membre supprimé avec succès' });
+
+  } catch (error) {
+    console.error('Error deleting member:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Membre non trouvé' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
 });
