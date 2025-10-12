@@ -337,7 +337,8 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 
 // ---------- Multer storages ----------
 const galleryStorage = multer.memoryStorage();
-const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 1.5 * 1024 * 1024 } });
+// 6 MB par fichier (galerie et fond)
+const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 6 * 1024 * 1024 } });
 
 // ---------- Vehicles (private) ----------
 app.get('/vehicles', requireAuth, async (_req, res) => {
