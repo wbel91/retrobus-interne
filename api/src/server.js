@@ -348,10 +348,12 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 const galleryStorage = multer.memoryStorage();
 // 6 MB par fichier (galerie et fond)
 const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 6 * 1024 * 1024 } });
-// ...imports existants...
-import multer from 'multer';
-// ...en haut, on a déjà uploadLarge; on peut réutiliser memoryStorage:
-const settingsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } });
+
+// Uploader for site settings (same memoryStorage pattern)
+const settingsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024 }
+});
 
 // Helper: read or init settings
 async function getOrInitSettings() {
