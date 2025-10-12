@@ -24,19 +24,19 @@ app.use((req, res, next) => {
     .map(s => s.trim())
     .filter(Boolean);
 
-  // If no list provided, allow all origins safely without credentials
+  // Allow listed origins with credentials; otherwise, allow public but without credentials
   const isAllowed = origin && (allowed.length === 0 || allowed.includes(origin));
 
   if (isAllowed && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true'); // only with a specific origin
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
   } else {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // public, no credentials
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
-  // Allow methods and requested headers (important for Authorization)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+
   const reqHeaders = req.headers['access-control-request-headers'];
   res.setHeader(
     'Access-Control-Allow-Headers',
