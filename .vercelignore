@@ -1,8 +1,14 @@
-api/
-api/**
+# Ignore ONLY the backend API at the project root
+/api
+/api/**
 
-uploads/
-Dockerfile
+# Make sure we do NOT ignore the frontend helpers under src/api
+!src/api/**
+!src/api
+
+# Optional: ignore server-only artifacts
+/uploads
+/Dockerfile
 *.db
 *.sqlite
 *.sql
