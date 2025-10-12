@@ -28,7 +28,7 @@ import {
   Spacer
 } from '@chakra-ui/react';
 import { FaEdit, FaTrash, FaPlus } from 'react-icons/fa';
-import apiClient from '../api/config';
+import { apiClient } from '../api/config'; // CORRIGER L'IMPORT
 
 export default function SiteManagement() {
   const [changelogs, setChangelogs] = useState([]);

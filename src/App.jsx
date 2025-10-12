@@ -14,7 +14,7 @@ import VehiculeShow from "./pages/VehiculeShow";
 import Evenements from "./pages/Evenements";
 import EventsManagement from "./pages/EventsManagement";
 import TestEventsPage from "./pages/TestEventsPage"; // Page de test
-import SiteManagement from "./pages/SiteManagement"; // Gestion du site
+import SiteManagement from "./pages/SiteManagement.jsx"; // Gestion du site - CORRIGER L'EXTENSION
 import Adhesion from "./pages/Adhesion";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
