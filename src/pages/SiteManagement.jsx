@@ -6,7 +6,8 @@ import {
 } from '@chakra-ui/react';
 import { FiPlus, FiTrash2, FiEdit } from 'react-icons/fi';
 
-const API = import.meta.env.VITE_API_URL;
+// Prefer env var, but fall back to the deployed Railway API for dev convenience
+const API = import.meta.env.VITE_API_URL || 'https://attractive-kindness-rbe-serveurs.up.railway.app';
 
 export default function SiteManagement() {
   const toast = useToast();
@@ -125,6 +126,44 @@ export default function SiteManagement() {
     }
   };
 
+  const uploadHeader = async (target, file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    try {
+      const r = await fetch(`${API}/site-settings/header-image?target=${encodeURIComponent(target)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: fd
+      });
+      if (!r.ok) throw new Error();
+      const j = await r.json();
+      setMaint(m => ({ ...m, ...j }));
+      toast({ status:'success', title:`Image d'en-tête (${target}) enregistrée` });
+    } catch {
+      toast({ status:'error', title:`Échec upload header ${target}` });
+    }
+  };
+
+  const uploadLogo = async (variant, file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    try {
+      const r = await fetch(`${API}/site-settings/logo?variant=${encodeURIComponent(variant)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: fd
+      });
+      if (!r.ok) throw new Error();
+      const j = await r.json();
+      setMaint(m => ({ ...m, ...j }));
+      toast({ status:'success', title:`Logo (${variant}) enregistré` });
+    } catch {
+      toast({ status:'error', title:`Échec upload logo ${variant}` });
+    }
+  };
+
   return (
     <Box p={6}>
       <HStack justify="space-between" mb={4}>
@@ -157,6 +196,84 @@ export default function SiteManagement() {
               <Image src={maint.maintenanceImage} alt="Maintenance" maxH="200px" borderRadius="md" />
             </Box>
           )}
+        </VStack>
+      </Box>
+
+      {/* New: Header & Logo */}
+      <Box borderWidth="1px" borderRadius="md" p={4} mb={6}>
+        <Heading size="md" mb={3}>En-tête & Logo</Heading>
+        <VStack align="stretch" spacing={4}>
+          <HStack align="flex-end">
+            <FormControl>
+              <FormLabel>Header (desktop)</FormLabel>
+              <Input type="file" accept="image/*" onChange={(e) => uploadHeader('desktop', e.target.files?.[0])} />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Header (mobile)</FormLabel>
+              <Input type="file" accept="image/*" onChange={(e) => uploadHeader('mobile', e.target.files?.[0])} />
+            </FormControl>
+          </HStack>
+
+          <HStack>
+            <FormControl>
+              <FormLabel>Position desktop (CSS background-position)</FormLabel>
+              <Input
+                placeholder="ex: center 40% ou 50% 30%"
+                value={maint.headerPositionDesktop || ''}
+                onChange={(e) => setMaint(m => ({ ...m, headerPositionDesktop: e.target.value }))}
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Position mobile</FormLabel>
+              <Input
+                placeholder="ex: center 20%"
+                value={maint.headerPositionMobile || ''}
+                onChange={(e) => setMaint(m => ({ ...m, headerPositionMobile: e.target.value }))}
+              />
+            </FormControl>
+            <Button onClick={saveMaint} isLoading={savingMaint} colorScheme="blue">Enregistrer positions</Button>
+          </HStack>
+
+          <HStack align="flex-start" spacing={6}>
+            <Box>
+              <Text fontSize="sm" color="gray.600" mb={1}>Aperçu header desktop</Text>
+              {maint.headerImageDesktop ? (
+                <Image src={maint.headerImageDesktop} maxH="140px" borderRadius="md" />
+              ) : <Text fontSize="sm" color="gray.500">Aucune image</Text>}
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.600" mb={1}>Aperçu header mobile</Text>
+              {maint.headerImageMobile ? (
+                <Image src={maint.headerImageMobile} maxH="140px" borderRadius="md" />
+              ) : <Text fontSize="sm" color="gray.500">Aucune image</Text>}
+            </Box>
+          </HStack>
+
+          <HStack align="flex-end">
+            <FormControl>
+              <FormLabel>Logo principal</FormLabel>
+              <Input type="file" accept="image/*" onChange={(e) => uploadLogo('main', e.target.files?.[0])} />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Logo inversé (optionnel)</FormLabel>
+              <Input type="file" accept="image/*" onChange={(e) => uploadLogo('inverted', e.target.files?.[0])} />
+            </FormControl>
+          </HStack>
+
+          <HStack align="flex-start" spacing={6}>
+            <Box>
+              <Text fontSize="sm" color="gray.600" mb={1}>Aperçu logo principal</Text>
+              {maint.logoMain ? (
+                <Image src={maint.logoMain} maxH="80px" borderRadius="md" bg="white" p={2} />
+              ) : <Text fontSize="sm" color="gray.500">Aucun logo</Text>}
+            </Box>
+            <Box>
+              <Text fontSize="sm" color="gray.600" mb={1}>Aperçu logo inversé</Text>
+              {maint.logoInverted ? (
+                <Image src={maint.logoInverted} maxH="80px" borderRadius="md" bg="black" p={2} />
+              ) : <Text fontSize="sm" color="gray.500">Aucun logo</Text>}
+            </Box>
+          </HStack>
         </VStack>
       </Box>
 

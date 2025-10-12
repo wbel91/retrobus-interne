@@ -370,7 +370,7 @@ const uploadLarge = multer({ storage: galleryStorage, limits: { fileSize: 6 * 10
 // Uploader for site settings (same memoryStorage pattern)
 const settingsUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 6 * 1024 * 1024 }
+  limits: { fileSize: 10 * 1024 * 1024 } // was 6MB
 });
 
 // Helper: read or init settings
@@ -389,15 +389,22 @@ app.get('/site-settings', requireAuth, async (_req, res) => {
   res.json(s);
 });
 
-// Admin: modifier maintenance (interne)
+// Admin: modifier maintenance + header positions (interne)
 app.put('/site-settings', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-  const { maintenanceEnabled, maintenanceMessage } = req.body || {};
+  const {
+    maintenanceEnabled,
+    maintenanceMessage,
+    headerPositionDesktop,
+    headerPositionMobile
+  } = req.body || {};
   const updated = await prisma.siteSettings.update({
     where: { id: 1 },
     data: {
       maintenanceEnabled: typeof maintenanceEnabled === 'boolean' ? maintenanceEnabled : undefined,
-      maintenanceMessage: maintenanceMessage ?? undefined
+      maintenanceMessage: maintenanceMessage ?? undefined,
+      headerPositionDesktop: typeof headerPositionDesktop === 'string' ? headerPositionDesktop : undefined,
+      headerPositionMobile: typeof headerPositionMobile === 'string' ? headerPositionMobile : undefined
     }
   });
   res.json(updated);
@@ -417,15 +424,59 @@ app.post('/site-settings/maintenance-image', requireAuth, settingsUpload.single(
   res.json({ maintenanceImage: updated.maintenanceImage });
 });
 
+// Admin: upload header image (desktop|mobile)
+app.post('/site-settings/header-image', requireAuth, settingsUpload.single('image'), async (req, res) => {
+  if (!ensureDB(res)) return;
+  const target = String(req.query.target || '').toLowerCase();
+  if (!['desktop','mobile'].includes(target)) {
+    return res.status(400).json({ error: "query target must be 'desktop' or 'mobile'" });
+  }
+  if (!req.file) return res.status(400).json({ error: 'image requis' });
+  const base64 = req.file.buffer.toString('base64');
+  const mimeType = req.file.mimetype || 'image/png';
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+  const field = target === 'desktop' ? 'headerImageDesktop' : 'headerImageMobile';
+  const updated = await prisma.siteSettings.update({
+    where: { id: 1 },
+    data: { [field]: dataUrl }
+  });
+  res.json({ [field]: updated[field] });
+});
+
+// Admin: upload logo (main|inverted)
+app.post('/site-settings/logo', requireAuth, settingsUpload.single('image'), async (req, res) => {
+  if (!ensureDB(res)) return;
+  const variant = String(req.query.variant || '').toLowerCase();
+  if (!['main','inverted'].includes(variant)) {
+    return res.status(400).json({ error: "query variant must be 'main' or 'inverted'" });
+  }
+  if (!req.file) return res.status(400).json({ error: 'image requis' });
+  const base64 = req.file.buffer.toString('base64');
+  const mimeType = req.file.mimetype || 'image/png';
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+  const field = variant === 'main' ? 'logoMain' : 'logoInverted';
+  const updated = await prisma.siteSettings.update({
+    where: { id: 1 },
+    data: { [field]: dataUrl }
+  });
+  res.json({ [field]: updated[field] });
+});
+
 // Public: exposer la config minimale (externe)
 app.get('/public/site-config', async (_req, res) => {
   if (!ensureDB(res)) return;
   const s = await getOrInitSettings();
-  // ne retourne que ce qui est nécessaire côté public
   res.json({
     maintenanceEnabled: s.maintenanceEnabled,
     maintenanceImage: s.maintenanceImage,
-    maintenanceMessage: s.maintenanceMessage || null
+    maintenanceMessage: s.maintenanceMessage || null,
+    // New: public header/logo
+    headerImageDesktop: s.headerImageDesktop || null,
+    headerImageMobile: s.headerImageMobile || null,
+    headerPositionDesktop: s.headerPositionDesktop || null,
+    headerPositionMobile: s.headerPositionMobile || null,
+    logoMain: s.logoMain || null,
+    logoInverted: s.logoInverted || null
   });
 });
 

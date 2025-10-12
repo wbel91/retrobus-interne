@@ -277,7 +277,16 @@ model Changelog {
 model SiteSettings {
   id                 Int      @id @default(1)
   maintenanceEnabled Boolean  @default(false)
-  maintenanceImage   String?  // data URL (image uploadée)
-  maintenanceMessage String?  // message optionnel
+  maintenanceImage   String?
+  maintenanceMessage String?
+
+  // New global header & logo config
+  headerImageDesktop     String?
+  headerImageMobile      String?
+  headerPositionDesktop  String?
+  headerPositionMobile   String?
+  logoMain               String?
+  logoInverted           String?
+
   updatedAt          DateTime @updatedAt
 }
