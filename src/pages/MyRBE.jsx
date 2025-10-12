@@ -34,7 +34,11 @@ const cards = [
     to: "/dashboard/newsletter",
     color: "purple.100",
   },
-  { title: "Gestion du Site", to: "/dashboard/site-management", color: "purple.100" }
+  {
+    title: "Gestion du Site",
+    to: "/dashboard/site-management",
+    color: "teal.100", // couleur distincte
+  },
 ];
 
 export default function MyRBE() {
@@ -46,6 +50,7 @@ export default function MyRBE() {
         </Heading>
         <Image src={myRbeLogo} alt="Logo My RBE" height="48px" />
       </HStack>
+
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
         {cards.map((card) => (
           <Card
@@ -65,15 +70,6 @@ export default function MyRBE() {
             </CardBody>
           </Card>
         ))}
-        <Card
-          as={RouterLink}
-          to="/dashboard/site-management"
-          bg="purple.100"
-          _hover={{ bg:'purple.200' }}
-        >
-          <CardHeader fontWeight="bold">Gestion du Site</CardHeader>
-          <CardBody>Maintenance, changelog…</CardBody>
-        </Card>
       </SimpleGrid>
     </Box>
   );
