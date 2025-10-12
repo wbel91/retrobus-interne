@@ -1,7 +1,6 @@
 api/
 api/**
 
-# Optional: exclude other server-only assets
 uploads/
 Dockerfile
 *.db
