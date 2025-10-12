@@ -173,21 +173,22 @@ function toText(v) {
 const transformVehicle = (vehicle) => {
   if (!vehicle) return null;
   let caract = [];
-  try {
+  try { 
     const parsed = vehicle.caracteristiques ? JSON.parse(vehicle.caracteristiques) : [];
-
+    
     if (Array.isArray(parsed)) {
-      // normalize label/value
-      caract = parsed.map(it => ({
-        label: toText(it?.label),
-        value: toText(it?.value)
-      }));
+      // Format label/value - garder tel quel en normalisant
+      caract = parsed
+        .filter(it => it && (it.label != null || it.value != null))
+        .map(it => ({ label: toText(it.label), value: toText(it.value) }));
     } else if (typeof parsed === 'object' && parsed) {
-      // object map -> label/value array
-      caract = Object.entries(parsed).map(([key, value]) => ({
-        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
-        value: toText(value)
-      }));
+      // Format objet legacy -> convertir en label/value en ignorant les clés parasites
+      caract = Object.entries(parsed)
+        .filter(([key]) => key !== 'label' && key !== 'value')
+        .map(([key, value]) => ({
+          label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+          value: toText(value)
+        }));
     }
   } catch(e) {
     console.error('Erreur parsing caracteristiques:', e);
@@ -450,20 +451,33 @@ app.put('/vehicles/:parc', requireAuth, async (req, res) => {
         : null;
     }
 
+    // 1) On met à jour les anciennes clés techniques si présentes (optionnel)
     caractKeys.forEach(k => {
       if (body[k] !== undefined) caract[k] = body[k] || null;
     });
 
+    // 2) NOUVEAU: si on reçoit un tableau [{label, value}], on l’enregistre tel quel
+    let wroteArrayCaracteristiques = false;
     if (Array.isArray(body.caracteristiques)) {
-      try { caract = body.caracteristiques.reduce((acc, it) => ({ ...acc, ...it }), caract); } catch {}
+      const normalized = body.caracteristiques
+        .filter(it => it && (it.label != null || it.value != null))
+        .map(it => ({
+          label: String(it.label ?? '').trim(),
+          value: String(it.value ?? '').trim()
+        }));
+      dataUpdate.caracteristiques = JSON.stringify(normalized);
+      wroteArrayCaracteristiques = true;
     }
 
     if (body.backgroundImage !== undefined) dataUpdate.backgroundImage = body.backgroundImage || null;
     if (body.backgroundPosition !== undefined) dataUpdate.backgroundPosition = body.backgroundPosition || null;
 
-    dataUpdate.caracteristiques = Object.keys(caract).length
-      ? JSON.stringify(caract)
-      : null;
+    // 3) Si on n’a pas écrit le tableau, on retombe sur l’ancien format objet (compat legacy)
+    if (!wroteArrayCaracteristiques) {
+      dataUpdate.caracteristiques = Object.keys(caract).length
+        ? JSON.stringify(caract)
+        : null;
+    }
 
     const updated = await prisma.vehicle.update({
       where: { parc },
@@ -500,14 +514,20 @@ app.post('/vehicles/:parc/gallery', requireAuth, uploadLarge.array('images', 10)
     const existingGallery = parseJsonField(v.gallery);
     const existing = Array.isArray(existingGallery) ? existingGallery : [];
 
-    const added = (req.files || []).map(file => {
+    const files = req.files || [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'Aucun fichier reçu' });
+    }
+
+    const added = files.map(file => {
       const base64 = file.buffer.toString('base64');
-      const mimeType = file.mimetype;
+      const mimeType = file.mimetype || 'image/jpeg';
       return `data:${mimeType};base64,${base64}`;
     });
 
     const MAX_GALLERY_IMAGES = 12;
-    const gallery = existing.concat(added).slice(0, MAX_GALLERY_IMAGES);
+    // dédup simple si jamais une même image est renvoyée plusieurs fois
+    const gallery = Array.from(new Set(existing.concat(added))).slice(0, MAX_GALLERY_IMAGES);
 
     const updated = await prisma.vehicle.update({
       where: { parc },
