@@ -16,7 +16,7 @@ import {
   FiTrash2, FiSearch, FiRefreshCw, FiPlus, FiDownload, FiDollarSign,
   FiClock, FiUserCheck, FiTruck, FiCheckCircle, FiAlertCircle, 
   FiUser, FiMail, FiPhone, FiSave, FiUserPlus, FiAlertTriangle,
-  FiSettings, FiMap, FiMaximize2, FiCopy, FiKey
+  FiSettings, FiMap, FiMaximize2, FiCopy, FiKey, FiNavigation
 } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 import { eventsAPI } from '../api/index.js';
