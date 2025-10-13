@@ -25,10 +25,14 @@ import {
   Badge,
   IconButton,
   Flex,
-  Spacer
+  Spacer,
+  Alert,
+  AlertIcon,
+  Spinner,
+  Center
 } from '@chakra-ui/react';
 import { FaEdit, FaTrash, FaPlus } from 'react-icons/fa';
-import { apiClient } from '../api/config'; // CORRIGER L'IMPORT
+import { apiClient } from '../api/config';
 
 export default function SiteManagement() {
   const [changelogs, setChangelogs] = useState([]);
@@ -44,14 +48,22 @@ export default function SiteManagement() {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
-  // Charger les changelogs
+  // Charger les changelogs avec gestion d'erreur améliorée
   const fetchChangelogs = async () => {
     try {
       setLoading(true);
       const response = await apiClient.get('/changelog');
-      setChangelogs(response.data);
+      
+      // Vérifier que response.data existe et est un tableau
+      if (response.data && Array.isArray(response.data)) {
+        setChangelogs(response.data);
+      } else {
+        console.warn('Réponse inattendue de l\'API:', response.data);
+        setChangelogs([]);
+      }
     } catch (error) {
       console.error('Erreur lors du chargement des changelogs:', error);
+      setChangelogs([]); // S'assurer qu'on a toujours un tableau
       toast({
         title: 'Erreur',
         description: 'Impossible de charger les changelogs',
@@ -85,14 +97,31 @@ export default function SiteManagement() {
     onOpen();
   };
 
-  // Ouvrir le modal pour éditer
+  // Ouvrir le modal pour éditer avec validation
   const handleEdit = (changelog) => {
     setSelectedChangelog(changelog);
+    
+    // S'assurer que changes est toujours un tableau
+    let changes = [''];
+    if (changelog.changes) {
+      if (Array.isArray(changelog.changes)) {
+        changes = changelog.changes.length > 0 ? changelog.changes : [''];
+      } else if (typeof changelog.changes === 'string') {
+        try {
+          const parsed = JSON.parse(changelog.changes);
+          changes = Array.isArray(parsed) ? parsed : [''];
+        } catch (e) {
+          console.warn('Impossible de parser changes:', changelog.changes);
+          changes = [changelog.changes];
+        }
+      }
+    }
+    
     setFormData({
-      title: changelog.title,
-      version: changelog.version,
-      date: changelog.date.split('T')[0],
-      changes: changelog.changes || ['']
+      title: changelog.title || '',
+      version: changelog.version || '',
+      date: changelog.date ? changelog.date.split('T')[0] : new Date().toISOString().split('T')[0],
+      changes
     });
     onOpen();
   };
@@ -107,10 +136,12 @@ export default function SiteManagement() {
 
   // Supprimer une ligne de changement
   const removeChange = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      changes: prev.changes.filter((_, i) => i !== index)
-    }));
+    if (formData.changes.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        changes: prev.changes.filter((_, i) => i !== index)
+      }));
+    }
   };
 
   // Mettre à jour une ligne de changement
@@ -124,6 +155,18 @@ export default function SiteManagement() {
   // Sauvegarder le changelog
   const handleSave = async () => {
     try {
+      // Validation
+      if (!formData.title.trim() || !formData.version.trim()) {
+        toast({
+          title: 'Erreur de validation',
+          description: 'Le titre et la version sont requis',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+
       const payload = {
         ...formData,
         changes: formData.changes.filter(change => change.trim() !== '')
@@ -193,6 +236,40 @@ export default function SiteManagement() {
     }
   };
 
+  // Fonction pour afficher les changements de manière sécurisée
+  const renderChanges = (changes) => {
+    if (!changes) return null;
+    
+    let changesList = [];
+    if (Array.isArray(changes)) {
+      changesList = changes;
+    } else if (typeof changes === 'string') {
+      try {
+        const parsed = JSON.parse(changes);
+        changesList = Array.isArray(parsed) ? parsed : [changes];
+      } catch {
+        changesList = [changes];
+      }
+    }
+    
+    return changesList.map((change, index) => (
+      <Text key={index} fontSize="sm">
+        • {change}
+      </Text>
+    ));
+  };
+
+  if (loading) {
+    return (
+      <Center minH="400px">
+        <VStack>
+          <Spinner size="xl" color="var(--rbe-red)" />
+          <Text>Chargement des changelogs...</Text>
+        </VStack>
+      </Center>
+    );
+  }
+
   return (
     <Box p={6}>
       <Flex mb={6} align="center">
@@ -204,10 +281,11 @@ export default function SiteManagement() {
       </Flex>
 
       <VStack spacing={4} align="stretch">
-        {loading ? (
-          <Text>Chargement...</Text>
-        ) : changelogs.length === 0 ? (
-          <Text>Aucun changelog trouvé</Text>
+        {changelogs.length === 0 ? (
+          <Alert status="info">
+            <AlertIcon />
+            Aucun changelog trouvé. Créez le premier !
+          </Alert>
         ) : (
           changelogs.map((changelog) => (
             <Card key={changelog.id}>
@@ -218,7 +296,7 @@ export default function SiteManagement() {
                     <HStack>
                       <Badge colorScheme="blue">v{changelog.version}</Badge>
                       <Text fontSize="sm" color="gray.600">
-                        {new Date(changelog.date).toLocaleDateString('fr-FR')}
+                        {changelog.date ? new Date(changelog.date).toLocaleDateString('fr-FR') : 'Date inconnue'}
                       </Text>
                     </HStack>
                   </VStack>
@@ -230,6 +308,7 @@ export default function SiteManagement() {
                       colorScheme="blue"
                       variant="ghost"
                       onClick={() => handleEdit(changelog)}
+                      aria-label="Modifier"
                     />
                     <IconButton
                       icon={<FaTrash />}
@@ -237,17 +316,14 @@ export default function SiteManagement() {
                       colorScheme="red"
                       variant="ghost"
                       onClick={() => handleDelete(changelog.id)}
+                      aria-label="Supprimer"
                     />
                   </HStack>
                 </Flex>
               </CardHeader>
               <CardBody pt={0}>
                 <VStack align="start" spacing={2}>
-                  {changelog.changes?.map((change, index) => (
-                    <Text key={index} fontSize="sm">
-                      • {change}
-                    </Text>
-                  ))}
+                  {renderChanges(changelog.changes)}
                 </VStack>
               </CardBody>
             </Card>
@@ -309,6 +385,7 @@ export default function SiteManagement() {
                           colorScheme="red"
                           variant="ghost"
                           onClick={() => removeChange(index)}
+                          aria-label="Supprimer"
                         />
                       )}
                     </HStack>

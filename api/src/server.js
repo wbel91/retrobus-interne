@@ -1867,11 +1867,22 @@ app.get('/members', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
     }
 
-    const members = await prisma.member.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
+    // Vérifier que la table existe avant de l'interroger
+    try {
+      const members = await prisma.member.findMany({
+        orderBy: { createdAt: 'desc' }
+      });
 
-    res.json(members.map(transformMember));
+      res.json(members.map(transformMember));
+    } catch (dbError) {
+      // Si la table n'existe pas, retourner un tableau vide
+      if (dbError.code === 'P2021' || dbError.message.includes('does not exist')) {
+        console.warn('Table member n\'existe pas encore, retour d\'un tableau vide');
+        return res.json([]);
+      }
+      throw dbError; // Re-throw si c'est une autre erreur
+    }
+
   } catch (error) {
     console.error('Error fetching members:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des membres' });
@@ -2014,6 +2025,7 @@ app.patch('/members/:id', requireAuth, async (req, res) => {
       'membershipType', 'membershipStatus', 'role', 'hasInternalAccess', 
       'hasExternalAccess', 'loginEnabled'
     ];
+
 
     const filteredUpdates = Object.keys(updates)
       .filter(key => allowedFields.includes(key))
