@@ -366,6 +366,59 @@ app.post('/auth/member-login', async (req, res) => {
   }
 });
 
+// POST /auth/change-password - Changer le mot de passe membre
+app.post('/auth/change-password', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Mot de passe actuel et nouveau requis' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Le nouveau mot de passe doit faire au moins 6 caractères' });
+    }
+
+    // Vérifier si c'est un membre connecté
+    if (req.user.type === 'member') {
+      const member = await prisma.member.findUnique({ where: { id: req.user.userId } });
+      if (!member) {
+        return res.status(404).json({ error: 'Membre non trouvé' });
+      }
+
+      // Vérifier le mot de passe actuel
+      const passwordToCheck = member.temporaryPassword || member.internalPassword;
+      if (!passwordToCheck || !(await verifyPassword(currentPassword, passwordToCheck))) {
+        return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
+      }
+
+      // Hasher le nouveau mot de passe
+      const hashedNewPassword = await hashPassword(newPassword);
+
+      // Mettre à jour le mot de passe
+      await prisma.member.update({
+        where: { id: member.id },
+        data: {
+          internalPassword: hashedNewPassword,
+          temporaryPassword: null,
+          mustChangePassword: false,
+          passwordChangedAt: new Date()
+        }
+      });
+
+      res.json({ message: 'Mot de passe changé avec succès' });
+    } else {
+      res.status(403).json({ error: 'Cette fonction est réservée aux membres' });
+    }
+
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ error: 'Erreur lors du changement de mot de passe' });
+  }
+});
+
 // Profil membre courant
 app.get('/api/me', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
@@ -1216,7 +1269,7 @@ app.post('/api/members', authenticateToken, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const {
-      firstName, lastName, email, phone, address, city, postalCode,
+      firstName, lastName, email, matricule, phone, address, city, postalCode,
       birthDate, membershipType = 'STANDARD', membershipStatus = 'PENDING',
       renewalDate, paymentAmount, paymentMethod, hasExternalAccess = false,
       hasInternalAccess = false, newsletter = true, notes, role = 'MEMBER',
@@ -1229,30 +1282,47 @@ app.post('/api/members', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'firstName, lastName, email requis' });
     }
 
-    const existingMember = await prisma.member.findUnique({ where: { email } });
-    if (existingMember) {
-      return res.status(409).json({ error: 'Email déjà utilisé' });
+    // Validation du matricule uniquement s'il est fourni (optionnel pour /api/members)
+    if (matricule && !/^[a-z]+\.[a-z]+$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont) - lettres minuscules uniquement' });
     }
 
-    const year = new Date().getFullYear();
-    const lastMember = await prisma.member.findFirst({
-      where: { memberNumber: { startsWith: `${year}-` } },
-      orderBy: { memberNumber: 'desc' }
+    // Vérifier unicité email et matricule
+    const whereConditions = [{ email }];
+    if (matricule) {
+      whereConditions.push({ matricule });
+    }
+
+    const existingMember = await prisma.member.findFirst({
+      where: { OR: whereConditions }
     });
 
-    let memberNumber = `${year}-001`;
-    if (lastMember) {
-      const parts = lastMember.memberNumber.split('-');
-      const seq = parseInt(parts[1] || '0') + 1;
-      memberNumber = `${year}-${String(seq).padStart(3, '0')}`;
+    if (existingMember) {
+      if (existingMember.email === email) {
+        return res.status(400).json({ error: 'Email déjà utilisé' });
+      }
+      if (existingMember.matricule === matricule) {
+        return res.status(400).json({ error: 'Matricule déjà utilisé' });
+      }
     }
 
+    // Générer mot de passe temporaire
+    const tempPassword = generateTemporaryPassword();
+    const hashedPassword = await hashPassword(tempPassword);
+
+    // Générer numéro d'adhérent unique
+    const year = new Date().getFullYear();
+    const count = await prisma.member.count() + 1;
+    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
+
+    // Créer l'adhérent
     const member = await prisma.member.create({
       data: {
         memberNumber,
         firstName,
         lastName,
         email,
+        matricule, // Ajouter cette ligne
         phone,
         address,
         city,
@@ -1265,6 +1335,7 @@ app.post('/api/members', authenticateToken, async (req, res) => {
         paymentMethod,
         hasExternalAccess,
         hasInternalAccess,
+        loginEnabled: matricule ? true : false, // Activer le login seulement si matricule fourni
         newsletter,
         notes,
         role,
@@ -1282,580 +1353,83 @@ app.post('/api/members', authenticateToken, async (req, res) => {
       }
     });
 
-    const { internalPassword, ...memberData } = member;
-    res.status(201).json(memberData);
-  } catch (e) {
-    console.error('Erreur création adhérent (/api):', e);
+    res.status(201).json({
+      member: transformMember(member),
+      temporaryPassword: tempPassword, // Retourné une seule fois pour l'admin
+      message: `Adhérent créé avec succès. Mot de passe temporaire : ${tempPassword}`
+    });
+
+  } catch (error) {
+    console.error('Error creating member with login:', error);
     res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
   }
 });
 
-app.put('/api/members/:id', authenticateToken, async (req, res) => {
+// POST /members/:id/add-login - Ajouter identifiants de connexion à un membre existant
+app.post('/members/:id/add-login', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
+  
   try {
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
     const { id } = req.params;
-    const updateData = { ...req.body };
+    const { matricule, role, hasInternalAccess = true } = req.body;
 
-    if (updateData.birthDate) updateData.birthDate = updateData.birthDate ? new Date(updateData.birthDate) : null;
-    if (updateData.renewalDate) updateData.renewalDate = updateData.renewalDate ? new Date(updateData.renewalDate) : null;
-    if (updateData.licenseExpiryDate) updateData.licenseExpiryDate = updateData.licenseExpiryDate ? new Date(updateData.licenseExpiryDate) : null;
-    if (updateData.medicalCertificateDate) updateData.medicalCertificateDate = updateData.medicalCertificateDate ? new Date(updateData.medicalCertificateDate) : null;
-    if (updateData.paymentAmount) updateData.paymentAmount = parseFloat(updateData.paymentAmount);
-    if (updateData.maxPassengers) updateData.maxPassengers = parseInt(updateData.maxPassengers);
-
-    delete updateData.memberNumber;
-    delete updateData.internalPassword;
-
-    const member = await prisma.member.update({
-      where: { id },
-      data: updateData
-    });
-
-    const { internalPassword, ...memberData } = member;
-    res.json(memberData);
-  } catch (e) {
-    console.error('Erreur mise à jour adhérent (/api):', e);
-    if (e.code === 'P2025') return res.status(404).json({ error: 'Adhérent introuvable' });
-    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'adhérent' });
-  }
-});
-
-app.delete('/api/members/:id', authenticateToken, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    await prisma.member.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch (e) {
-    console.error('Erreur suppression adhérent (/api):', e);
-    if (e.code === 'P2025') return res.status(404).json({ error: 'Adhérent introuvable' });
-    res.status(500).json({ error: 'Erreur lors de la suppression de l\'adhérent' });
-  }
-});
-
-app.get('/api/members/:id', authenticateToken, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const member = await prisma.member.findUnique({ where: { id: req.params.id } });
-    if (!member) return res.status(404).json({ error: 'Adhérent introuvable' });
-    const { internalPassword, ...memberData } = member;
-    res.json(memberData);
-  } catch (e) {
-    console.error('Erreur récupération adhérent (/api):', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération de l\'adhérent' });
-  }
-});
-
-app.get('/api/members/stats', authenticateToken, async (_req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const [
-      totalMembers,
-      activeMembers,
-      expiredMembers,
-      pendingMembers,
-      membersWithInternalAccess,
-      recentJoins,
-      drivers
-    ] = await Promise.all([
-      prisma.member.count(),
-      prisma.member.count({ where: { membershipStatus: 'ACTIVE' } }),
-      prisma.member.count({ where: { membershipStatus: 'EXPIRED' } }),
-      prisma.member.count({ where: { membershipStatus: 'PENDING' } }),
-      prisma.member.count({ where: { hasInternalAccess: true } }),
-      prisma.member.count({ where: { joinDate: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } }),
-      prisma.member.count({ where: { role: 'DRIVER' } })
-    ]);
-
-    res.json({
-      totalMembers,
-      activeMembers,
-      expiredMembers,
-      pendingMembers,
-      membersWithInternalAccess,
-      recentJoins,
-      drivers
-    });
-  } catch (e) {
-    console.error('Erreur statistiques adhérents (/api):', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
-  }
-});
-
-// ---------- Documents routes ----------
-app.get('/api/documents/member/:memberId', authenticateToken, docsAPI.getByMember);
-app.post('/api/documents/member/:memberId/upload', authenticateToken, documentsUpload.single('document'), docsAPI.upload);
-app.get('/api/documents/:documentId/download', authenticateToken, docsAPI.download);
-app.put('/api/documents/:documentId/status', authenticateToken, docsAPI.updateStatus);
-app.delete('/api/documents/:documentId', authenticateToken, docsAPI.delete);
-app.get('/api/documents/expiring', authenticateToken, docsAPI.getExpiring);
-
-// ---------- Newsletter Campaigns (squelette) ----------
-app.get('/newsletter/campaigns', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { status } = req.query;
-    const campaigns = await newsletterService.getCampaigns({ status });
-    res.json(campaigns);
-  } catch (e) {
-    console.error('Erreur récupération campagnes:', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération des campagnes' });
-  }
-});
-
-// Créer une nouvelle campagne
-app.post('/newsletter/campaigns', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { title, subject, content, scheduledAt } = req.body;
+    // Validation du matricule
+    if (!matricule) {
+      return res.status(400).json({ error: 'Matricule requis' });
+    }
     
-    if (!title || !subject || !content) {
-      return res.status(400).json({ error: 'Titre, sujet et contenu requis' });
+    if (!/^[a-z]+\.[a-z]+$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont)' });
     }
 
-    const campaign = await newsletterService.createCampaign({
-      title,
-      subject, 
-      content,
-      scheduledAt,
-      createdBy: req.user?.id || 'admin'
+    // Vérifier que le membre existe
+    const member = await prisma.member.findUnique({ where: { id } });
+    if (!member) {
+      return res.status(404).json({ error: 'Membre non trouvé' });
+    }
+
+    // Vérifier que le matricule n'est pas déjà utilisé
+    const existingMatricule = await prisma.member.findFirst({
+      where: { matricule, id: { not: id } }
     });
-
-    res.status(201).json(campaign);
-  } catch (e) {
-    console.error('Erreur création campagne:', e);
-    res.status(500).json({ error: 'Erreur lors de la création de la campagne' });
-  }
-});
-
-// Récupérer une campagne spécifique
-app.get('/newsletter/campaigns/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const campaign = await newsletterService.getCampaignById(req.params.id);
-    if (!campaign) return res.status(404).json({ error: 'Campagne non trouvée' });
-    res.json(campaign);
-  } catch (e) {
-    console.error('Erreur récupération campagne:', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération de la campagne' });
-  }
-});
-
-// Prévisualiser une campagne
-app.get('/newsletter/campaigns/:id/preview', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const preview = await newsletterService.previewCampaign(req.params.id);
-    res.json(preview);
-  } catch (e) {
-    console.error('Erreur prévisualisation:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Envoyer un email de test
-app.post('/newsletter/campaigns/:id/test', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'Email de test requis' });
+    if (existingMatricule) {
+      return res.status(400).json({ error: 'Matricule déjà utilisé' });
     }
 
-    await newsletterService.sendTestEmail(req.params.id, email);
-    res.json({ success: true, message: 'Email de test envoyé' });
-  } catch (e) {
-    console.error('Erreur envoi test:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
+    // Générer mot de passe temporaire
+    const tempPassword = generateTemporaryPassword();
+    const hashedPassword = await hashPassword(tempPassword);
 
-// Préparer l'envoi d'une campagne
-app.post('/newsletter/campaigns/:id/prepare', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const result = await newsletterService.prepareCampaignSend(req.params.id);
-    res.json(result);
-  } catch (e) {
-    console.error('Erreur préparation envoi:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Envoyer une campagne
-app.post('/newsletter/campaigns/:id/send', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const result = await newsletterService.sendCampaign(req.params.id);
-    res.json(result);
-  } catch (e) {
-    console.error('Erreur envoi campagne:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Récupérer les statistiques d'une campagne
-app.get('/newsletter/campaigns/:id/stats', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const stats = await newsletterService.getCampaignStats(req.params.id);
-    res.json(stats);
-  } catch (e) {
-    console.error('Erreur statistiques campagne:', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
-  }
-});
-
-// Supprimer une campagne
-app.delete('/newsletter/campaigns/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    await newsletterService.deleteCampaign(req.params.id);
-    res.json({ success: true });
-  } catch (e) {
-    console.error('Erreur suppression campagne:', e);
-    res.status(500).json({ error: 'Erreur lors de la suppression de la campagne' });
-  }
-});
-
-// ---------- Inscriptions et billets ----------
-app.post('/registrations', async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { eventId, participantName, participantEmail, adultTickets = 1, childTickets = 0, paymentMethod = 'internal' } = req.body || {};
-    if (!eventId || !participantName || !participantEmail) {
-      return res.status(400).json({ error: 'eventId, participantName, participantEmail requis' });
-    }
-    const event = await prisma.event.findUnique({ where: { id: eventId } });
-    if (!event) return res.status(404).json({ error: 'Événement introuvable' });
-
-    const totalAmount = (event.adultPrice || 0) * adultTickets + (event.childPrice || 0) * childTickets;
-
-    const registration = await prisma.eventRegistration.create({
+    // Mettre à jour le membre
+    const updatedMember = await prisma.member.update({
+      where: { id },
       data: {
-        eventId,
-        participantName,
-        participantEmail,
-        adultTickets,
-        childTickets,
-        totalAmount,
-        paymentMethod,
-        helloAssoStatus: paymentMethod === 'helloasso' ? 'PENDING' : 'VALIDATED'
+        matricule,
+        role: role || member.role,
+        hasInternalAccess,
+        loginEnabled: true,
+        temporaryPassword: hashedPassword,
+        mustChangePassword: true,
+        passwordChangedAt: new Date()
       }
     });
 
-    if (paymentMethod === 'free' || paymentMethod === 'internal') {
-      await generateAndSendTicket(registration.id);
-    }
-
-    res.status(201).json({
-      registrationId: registration.id,
-      helloAssoUrl: paymentMethod === 'helloasso' ? event.helloAssoUrl : null,
-      totalAmount,
-      status: registration.helloAssoStatus
-    });
-  } catch (e) {
-    console.error('Erreur création inscription:', e);
-    res.status(500).json({ error: 'Erreur lors de la création de l\'inscription' });
-  }
-});
-
-app.post('/webhooks/helloasso', async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    console.log('🔔 Webhook HelloAsso reçu:', req.body);
-    const { data } = req.body || {};
-    const { order } = data || {};
-    if (!order || !order.id) return res.status(400).json({ error: 'payload invalide' });
-
-    const registration = await prisma.eventRegistration.findFirst({
-      where: { helloAssoOrderId: order.id.toString() }
-    });
-    if (!registration) return res.status(404).json({ error: 'Inscription introuvable' });
-
-    const newStatus = order.state === 'Authorized' ? 'VALIDATED' : 'PENDING';
-
-    await prisma.eventRegistration.update({
-      where: { id: registration.id },
-      data: { helloAssoStatus: newStatus }
+    res.status(200).json({
+      member: transformMember(updatedMember),
+      temporaryPassword: tempPassword,
+      message: `Identifiants créés pour ${updatedMember.firstName} ${updatedMember.lastName}. Mot de passe temporaire : ${tempPassword}`
     });
 
-    if (newStatus === 'VALIDATED' && !registration.ticketSent) {
-      await generateAndSendTicket(registration.id);
-    }
-
-    res.status(200).json({ success: true });
-  } catch (e) {
-    console.error('Erreur webhook HelloAsso:', e);
-    res.status(500).json({ error: 'Erreur traitement webhook' });
+  } catch (error) {
+    console.error('Error adding login to member:', error);
+    res.status(500).json({ error: 'Erreur lors de l\'ajout des identifiants' });
   }
 });
-
-app.get('/registrations/:id/status', async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const registration = await prisma.eventRegistration.findUnique({
-      where: { id: req.params.id },
-      include: {
-        event: {
-          select: { title: true, date: true, time: true, location: true }
-        }
-      }
-    });
-    if (!registration) return res.status(404).json({ error: 'Inscription introuvable' });
-    res.json({
-      id: registration.id,
-      status: registration.helloAssoStatus,
-      ticketSent: registration.ticketSent,
-      event: registration.event,
-      qrCode: registration.qrCodeData
-    });
-  } catch (e) {
-    console.error('Erreur vérification statut:', e);
-    res.status(500).json({ error: 'Erreur lors de la vérification' });
-  }
-});
-
-async function generateAndSendTicket(registrationId) {
-  try {
-    const registration = await prisma.eventRegistration.findUnique({
-      where: { id: registrationId },
-      include: { event: true }
-    });
-
-    if (!registration || registration.ticketSent) return;
-
-    const qrCodeData = {
-      registrationId: registration.id,
-      eventId: registration.eventId,
-      eventTitle: registration.event.title,
-      eventDate: registration.event.date,
-      eventTime: registration.event.time,
-      eventLocation: registration.event.location,
-      participantName: registration.participantName,
-      participantEmail: registration.participantEmail,
-      adultTickets: registration.adultTickets,
-      childTickets: registration.childTickets,
-      totalAmount: registration.totalAmount,
-      validationCode: generateValidationCode(),
-      issueDate: new Date().toISOString()
-    };
-
-    await prisma.eventRegistration.update({
-      where: { id: registrationId },
-      data: {
-        qrCodeData: JSON.stringify(qrCodeData),
-        ticketSent: true
-      }
-    });
-
-    await sendTicketEmail(registration, qrCodeData);
-    console.log(`✅ Billet envoyé pour inscription ${registrationId}`);
-  } catch (e) {
-    console.error('Erreur génération billet:', e);
-  }
-}
-
-function generateValidationCode() {
-  return `RBE-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-}
-
-async function sendTicketEmail(registration, qrCodeData) {
-  try {
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&format=png&data=${encodeURIComponent(JSON.stringify(qrCodeData))}`;
-    // TODO: plug nodemailer/sendgrid here
-    console.log('📧 Email billet préparé pour:', registration.participantEmail);
-    console.log('QR Code URL:', qrCodeUrl);
-  } catch (e) {
-    console.error('Erreur envoi email billet:', e);
-  }
-}
-
-// ---------- Error handler (AVANT listen) ----------
-app.use((err, req, res, _next) => {
-  try {
-    const origin = req.headers.origin;
-    const allowed = isAllowedOrigin(origin);
-    const publicPath = isPublicPath(req);
-
-    res.setHeader('X-CORS-MW', 'cors-v3');
-    res.setHeader('Access-Control-Expose-Headers', 'X-CORS-MW');
-
-    if (allowed) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Vary', 'Origin');
-    } else if (publicPath) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader(
-      'Access-Control-Allow-Headers',
-      req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-Requested-With'
-    );
-  } catch {}
-
-  const status = err?.status || err?.statusCode || 500;
-  console.error('❌ Error:', err?.message || err);
-  res.status(status).json({ error: err?.message || 'Server error' });
-});
-
-// ---------- Start server ----------
-app.listen(PORT, () => {
-  console.log(`🚀 API Server running on http://localhost:${PORT}`);
-  console.log('Boot =', new Date().toISOString());  console.log('Boot =', new Date().toISOString());
-});
-
-// Helpers
-const parseChanges = (v) => {
-  try {
-    if (Array.isArray(v)) return v.map(String);
-    if (typeof v === 'string') return JSON.parse(v);
-  } catch {}
-  return [];
-};
-const serializeChanges = (arr) => JSON.stringify((arr || []).map(String));
-
-// Public: liste (externe)
-app.get('/public/changelog', async (_req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const rows = await prisma.changelog.findMany({
-      orderBy: [{ date: 'desc' }, { id: 'desc' }]
-    });
-    res.json(rows.map(r => ({
-      id: r.id,
-      title: r.title,
-      version: r.version,
-      date: r.date.toISOString().slice(0, 10),
-      changes: parseChanges(r.changes)
-    })));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch changelog' });
-  }
-});
-
-// Admin (interne)
-app.get('/changelog', requireAuth, async (_req, res) => {
-  if (!ensureDB(res)) return;
-  const rows = await prisma.changelog.findMany({ orderBy: [{ date: 'desc' }, { id: 'desc' }] });
-  res.json(rows.map(r => ({ ...r, changes: parseChanges(r.changes) })));
-});
-
-app.post('/changelog', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  const { title, version, date, changes } = req.body || {};
-  if (!title || !version) return res.status(400).json({ error: 'title & version requis' });
-  const created = await prisma.changelog.create({
-    data: {
-      title,
-      version,
-      date: date ? new Date(date) : new Date(),
-      changes: serializeChanges(changes)
-    }
-  });
-  res.status(201).json({ ...created, changes: parseChanges(created.changes) });
-});
-
-app.put('/changelog/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  const id = parseInt(req.params.id);
-  const { title, version, date, changes } = req.body || {};
-  const updated = await prisma.changelog.update({
-    where: { id },
-    data: {
-      title: title ?? undefined,
-      version: version ?? undefined,
-      date: date ? new Date(date) : undefined,
-      changes: changes ? serializeChanges(changes) : undefined
-    }
-  });
-  res.json({ ...updated, changes: parseChanges(updated.changes) });
-});
-
-app.delete('/changelog/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  const id = parseInt(req.params.id);
-  await prisma.changelog.delete({ where: { id } });
-  res.status(204).end();
-});
-
-// Backward-compatible aliases for old "/api/vehicles" paths
-app.get('/api/vehicles', requireAuth, async (_req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const vehicles = await prisma.vehicle.findMany({ orderBy: { parc: 'asc' } });
-    res.json(vehicles.map(transformVehicle));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch vehicles' });
-  }
-});
-
-app.get('/api/vehicles/:parc', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const vehicle = await prisma.vehicle.findUnique({ where: { parc: req.params.parc } });
-    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
-    res.json(transformVehicle(vehicle));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch vehicle' });
-  }
-});
-
-// Fonction utilitaire pour générer un mot de passe temporaire
-function generateTemporaryPassword() {
-  const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'; // Exclu O, 0 pour éviter confusion
-  let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-// Fonction utilitaire pour hasher un mot de passe
-async function hashPassword(password) {
-  return await bcrypt.hash(password, 10);
-}
-
-async function verifyPassword(password, hash) {
-  return await bcrypt.compare(password, hash);
-}
-
-// Transformer un membre pour l'API (enlever données sensibles)
-function transformMember(member) {
-  if (!member) return null;
-  return {
-    id: member.id,
-    memberNumber: member.memberNumber,
-    firstName: member.firstName,
-    lastName: member.lastName,
-    email: member.email,
-    phone: member.phone,
-    address: member.address,
-    city: member.city,
-    postalCode: member.postalCode,
-    birthDate: member.birthDate,
-    membershipType: member.membershipType,
-    membershipStatus: member.membershipStatus,
-    joinDate: member.joinDate,
-    renewalDate: member.renewalDate,
-    role: member.role,
-    hasExternalAccess: member.hasExternalAccess,
-    hasInternalAccess: member.hasInternalAccess,
-    matricule: member.matricule,
-    loginEnabled: member.loginEnabled,
-    mustChangePassword: member.mustChangePassword,
-    lastLoginAt: member.lastLoginAt,
-    passwordChangedAt: member.passwordChangedAt,
-    loginAttempts: member.loginAttempts,
-    lockedUntil: member.lockedUntil,
-    createdAt: member.createdAt,
-    updatedAt: member.updatedAt
-  };
-}
 
 // GET /members - Liste tous les membres (admins seulement)
 app.get('/members', requireAuth, async (req, res) => {
@@ -1867,47 +1441,30 @@ app.get('/members', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
     }
 
-    // Vérifier que la table existe avant de l'interroger
-    try {
-      const members = await prisma.member.findMany({
-        orderBy: { createdAt: 'desc' }
-      });
-
-      res.json(members.map(transformMember));
-    } catch (dbError) {
-      // Si la table n'existe pas, retourner un tableau vide
-      if (dbError.code === 'P2021' || dbError.message.includes('does not exist')) {
-        console.warn('Table member n\'existe pas encore, retour d\'un tableau vide');
-        return res.json([]);
+    const members = await prisma.member.findMany({
+      orderBy: { lastName: 'asc' },
+      select: {
+        id: true,
+        memberNumber: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        matricule: true,
+        membershipStatus: true,
+        membershipType: true,
+        role: true,
+        hasInternalAccess: true,
+        hasExternalAccess: true,
+        joinDate: true,
+        renewalDate: true
       }
-      throw dbError; // Re-throw si c'est une autre erreur
-    }
+    });
+
+    res.json(members);
 
   } catch (error) {
     console.error('Error fetching members:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des membres' });
-  }
-});
-
-// GET /members/:id - Récupère un membre par ID
-app.get('/members/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    const { id } = req.params;
-    
-    const member = await prisma.member.findUnique({
-      where: { id }
-    });
-
-    if (!member) {
-      return res.status(404).json({ error: 'Membre non trouvé' });
-    }
-
-    res.json(transformMember(member));
-  } catch (error) {
-    console.error('Error fetching member:', error);
-    res.status(500).json({ error: 'Erreur lors de la récupération du membre' });
   }
 });
 
@@ -1927,13 +1484,19 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
       email,
       matricule,
       membershipType = 'STANDARD',
+      membershipStatus = 'ACTIVE',
       role = 'MEMBER',
       hasInternalAccess = false,
+      hasExternalAccess = false,
       phone,
       address,
       city,
       postalCode,
-      birthDate
+      birthDate,
+      paymentAmount,
+      paymentMethod = 'CASH',
+      notes,
+      newsletter = true
     } = req.body;
 
     // Validation
@@ -1941,8 +1504,14 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Prénom, nom et email requis' });
     }
 
-    if (!matricule || !/^\d{4}-\d{3}$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule requis au format YYYY-XXX (ex: 2025-001)' });
+    // Validation du matricule avec nouveau format
+    if (!matricule) {
+      return res.status(400).json({ error: 'Matricule requis' });
+    }
+    
+    // Valider le format prénom.nom (lettres minuscules uniquement)
+    if (!/^[a-z]+\.[a-z]+$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont) - lettres minuscules uniquement' });
     }
 
     // Vérifier unicité email et matricule
@@ -1979,8 +1548,10 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
         email,
         matricule,
         membershipType,
+        membershipStatus,
         role,
         hasInternalAccess,
+        hasExternalAccess,
         loginEnabled: true,
         temporaryPassword: hashedPassword,
         mustChangePassword: true,
@@ -1990,13 +1561,18 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
         city,
         postalCode,
         birthDate: birthDate ? new Date(birthDate) : null,
-        createdBy: req.user?.username || 'system'
+        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
+        paymentMethod,
+        newsletter,
+        notes,
+        createdBy: req.user?.username || 'system',
+        lastPaymentDate: paymentAmount ? new Date() : null
       }
     });
 
     res.status(201).json({
       member: transformMember(member),
-      temporaryPassword: tempPassword, // Retourné une seule fois pour l'admin
+      temporaryPassword: tempPassword,
       message: `Adhérent créé avec succès. Mot de passe temporaire : ${tempPassword}`
     });
 
@@ -2006,117 +1582,8 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
   }
 });
 
-// PATCH /members/:id - Mettre à jour un membre
-app.patch('/members/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    // Filtrer les champs autorisés
-    const allowedFields = [
-      'firstName', 'lastName', 'email', 'phone', 'address', 'city', 'postalCode',
-      'membershipType', 'membershipStatus', 'role', 'hasInternalAccess', 
-      'hasExternalAccess', 'loginEnabled'
-    ];
-
-
-    const filteredUpdates = Object.keys(updates)
-      .filter(key => allowedFields.includes(key))
-      .reduce((obj, key) => {
-        obj[key] = updates[key];
-        return obj;
-      }, {});
-
-    const updatedMember = await prisma.member.update({
-      where: { id },
-      data: filteredUpdates
-    });
-
-    res.json(transformMember(updatedMember));
-
-  } catch (error) {
-    console.error('Error updating member:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Membre non trouvé' });
-    }
-    res.status(500).json({ error: 'Erreur lors de la mise à jour' });
-  }
-});
-
-// POST /members/:id/reset-password - Réinitialiser le mot de passe d'un adhérent
-app.post('/members/:id/reset-password', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    const { id } = req.params;
-    const member = await prisma.member.findUnique({ where: { id } });
-
-    if (!member) {
-      return res.status(404).json({ error: 'Adhérent non trouvé' });
-    }
-
-    // Générer nouveau mot de passe temporaire
-    const tempPassword = generateTemporaryPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-
-    await prisma.member.update({
-      where: { id },
-      data: {
-        temporaryPassword: hashedPassword,
-        internalPassword: null,
-        mustChangePassword: true,
-        loginAttempts: 0,
-        lockedUntil: null,
-        passwordChangedAt: new Date()
-      }
-    });
-
-    res.json({
-      message: 'Mot de passe réinitialisé',
-      temporaryPassword: tempPassword
-    });
-
-  } catch (error) {
-    console.error('Error resetting password:', error);
-    res.status(500).json({ error: 'Erreur lors de la réinitialisation' });
-  }
-});
-
-// DELETE /members/:id - Supprimer un membre
-app.delete('/members/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    const { id } = req.params;
-
-    await prisma.member.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Membre supprimé avec succès' });
-
-  } catch (error) {
-    console.error('Error deleting member:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Membre non trouvé' });
-    }
-    res.status(500).json({ error: 'Erreur lors de la suppression' });
-  }
+// ---------- Start server ----------
+app.listen(PORT, () => {
+  console.log(`🚀 API Server running on http://localhost:${PORT}`);
+  console.log('Boot =', new Date().toISOString());
 });

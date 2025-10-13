@@ -40,9 +40,14 @@ const cards = [
     color: "orange.100",
   },
   {
+    title: "Flashs Info",
+    to: "/dashboard/flash-management",
+    color: "cyan.100",
+  },
+  {
     title: "Retromail",
     to: "/retromail",
-    color: "cyan.100",
+    color: "teal.100",
   },
 ];
 

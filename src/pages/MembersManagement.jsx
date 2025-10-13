@@ -6,7 +6,8 @@ import {
   SimpleGrid, Stat, StatLabel, StatNumber, Flex, Alert, AlertIcon,
   Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent,
   ModalHeader, ModalCloseButton, ModalBody, ModalFooter, FormControl,
-  FormLabel, Select, Switch, Textarea
+  FormLabel, Select, Switch, Textarea, AlertDialog, AlertDialogBody,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogContent, AlertDialogOverlay
 } from '@chakra-ui/react';
 import {
   FiUsers, FiPlus, FiSearch, FiEdit, FiTrash2, FiEye, FiKey,
@@ -33,13 +34,16 @@ export default function MembersManagement() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
+  const [memberToDelete, setMemberToDelete] = useState(null);
   const [stats, setStats] = useState({});
   
   const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
   const { isOpen: isEditOpen, onOpen: onEditOpen, onClose: onEditClose } = useDisclosure();
   const { isOpen: isResetPasswordOpen, onOpen: onResetPasswordOpen, onClose: onResetPasswordClose } = useDisclosure();
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
   
   const toast = useToast();
+  const cancelRef = React.useRef();
 
   // Charger les membres
   const fetchMembers = async () => {
@@ -86,9 +90,9 @@ export default function MembersManagement() {
 
   // Filtrer les membres selon la recherche
   const filteredMembers = members.filter(member =>
-    member.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    member.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    member.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    member.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     member.matricule?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -98,113 +102,161 @@ export default function MembersManagement() {
       const response = await fetch(`${membersAPI.baseURL}/members/${memberId}/reset-password`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
         }
       });
-
+      
+      if (!response.ok) throw new Error('Erreur de réinitialisation');
+      
       const data = await response.json();
-
-      if (!response.ok) throw new Error(data.error);
-
+      
       toast({
         status: 'success',
         title: 'Mot de passe réinitialisé',
-        description: `Nouveau mot de passe temporaire : ${data.temporaryPassword}`,
-        duration: 10000,
-        isClosable: true
+        description: `Nouveau mot de passe temporaire : ${data.temporaryPassword}`
       });
-
-      fetchMembers(); // Recharger la liste
-
+      
+      onResetPasswordClose();
+      fetchMembers();
+      
     } catch (error) {
       toast({
         status: 'error',
         title: 'Erreur',
-        description: error.message
+        description: 'Impossible de réinitialiser le mot de passe'
       });
     }
   };
 
-  // Activer/désactiver la connexion
-  const toggleLoginAccess = async (memberId, currentStatus) => {
+  // Supprimer un membre
+  const handleDeleteMember = async () => {
+    if (!memberToDelete) return;
+    
     try {
-      const response = await fetch(`${membersAPI.baseURL}/members/${memberId}`, {
-        method: 'PATCH',
+      const response = await fetch(`${membersAPI.baseURL}/members/${memberToDelete.id}`, {
+        method: 'DELETE',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ loginEnabled: !currentStatus })
+        }
       });
-
-      if (!response.ok) throw new Error('Erreur de mise à jour');
-
+      
+      if (!response.ok) throw new Error('Erreur de suppression');
+      
       toast({
         status: 'success',
-        title: currentStatus ? 'Accès désactivé' : 'Accès activé',
-        description: `L'accès à la connexion a été ${currentStatus ? 'désactivé' : 'activé'}`
+        title: 'Membre supprimé',
+        description: `${memberToDelete.firstName} ${memberToDelete.lastName} a été supprimé avec succès`
       });
-
-      fetchMembers();
-
+      
+      setMembers(members.filter(m => m.id !== memberToDelete.id));
+      setMemberToDelete(null);
+      onDeleteClose();
+      
     } catch (error) {
       toast({
         status: 'error',
         title: 'Erreur',
-        description: error.message
+        description: 'Impossible de supprimer le membre'
       });
     }
+  };
+
+  // Ouvrir la confirmation de suppression
+  const confirmDeleteMember = (member) => {
+    setMemberToDelete(member);
+    onDeleteOpen();
+  };
+
+  // Activer/désactiver l'accès intranet
+  const toggleInternalAccess = async (memberId, currentStatus) => {
+    try {
+      const response = await fetch(`${membersAPI.baseURL}/members/${memberId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          hasInternalAccess: !currentStatus,
+          loginEnabled: !currentStatus
+        })
+      });
+      
+      if (!response.ok) throw new Error('Erreur de mise à jour');
+      
+      toast({
+        status: 'success',
+        title: 'Accès mis à jour',
+        description: `Accès intranet ${!currentStatus ? 'activé' : 'désactivé'}`
+      });
+      
+      fetchMembers();
+      
+    } catch (error) {
+      toast({
+        status: 'error',
+        title: 'Erreur',
+        description: 'Impossible de mettre à jour l\'accès'
+      });
+    }
+  };
+
+  const handleMemberCreated = (newMember) => {
+    fetchMembers();
+    onCreateClose();
   };
 
   if (loading) {
     return (
       <Center h="400px">
-        <Spinner size="xl" color="blue.500" />
+        <Spinner size="xl" />
       </Center>
     );
   }
 
   return (
     <Box p={6}>
-      <VStack spacing={6} align="stretch">
-        {/* En-tête */}
+      <VStack align="stretch" spacing={6}>
+        {/* Header */}
         <Flex justify="space-between" align="center">
           <Heading size="lg" display="flex" alignItems="center">
-            <FiUsers style={{ marginRight: '12px' }} />
-            Gestion des Adhésions
+            <FiUsers style={{ marginRight: '8px' }} />
+            Gestion des Adhérents
           </Heading>
-          <Button
-            leftIcon={<FiUserPlus />}
-            colorScheme="blue"
-            onClick={onCreateOpen}
-          >
-            Nouvel adhérent
-          </Button>
+          <HStack>
+            <Button leftIcon={<FiRefreshCw />} onClick={fetchMembers}>
+              Actualiser
+            </Button>
+            <Button leftIcon={<FiUserPlus />} colorScheme="blue" onClick={onCreateOpen}>
+              Créer un adhérent
+            </Button>
+          </HStack>
         </Flex>
 
         {/* Statistiques */}
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
           <Card>
             <CardBody>
               <Stat>
-                <StatLabel>Total adhérents</StatLabel>
-                <StatNumber color="blue.500">{stats.total || 0}</StatNumber>
+                <StatLabel>Total Adhérents</StatLabel>
+                <StatNumber>{stats.total || 0}</StatNumber>
               </Stat>
             </CardBody>
           </Card>
           <Card>
             <CardBody>
               <Stat>
-                <StatLabel>Adhérents actifs</StatLabel>
-                <StatNumber color="green.500">{stats.active || 0}</StatNumber>
+                <StatLabel>Membres Actifs</StatLabel>
+                <StatNumber>{stats.active || 0}</StatNumber>
               </Stat>
             </CardBody>
           </Card>
           <Card>
             <CardBody>
               <Stat>
-                <StatLabel>Avec accès connexion</StatLabel>
-                <StatNumber color="purple.500">{stats.withLogin || 0}</StatNumber>
+                <StatLabel>Accès Intranet</StatLabel>
+                <StatNumber>{stats.withLogin || 0}</StatNumber>
               </Stat>
             </CardBody>
           </Card>
@@ -219,209 +271,187 @@ export default function MembersManagement() {
         </SimpleGrid>
 
         {/* Barre de recherche */}
-        <HStack spacing={4}>
-          <InputGroup flex={1}>
-            <InputLeftElement pointerEvents="none">
-              <FiSearch color="gray.300" />
-            </InputLeftElement>
-            <Input
-              placeholder="Rechercher par nom, email ou matricule..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </InputGroup>
-          <Button leftIcon={<FiRefreshCw />} onClick={fetchMembers}>
-            Actualiser
-          </Button>
-        </HStack>
+        <InputGroup maxW="400px">
+          <InputLeftElement>
+            <FiSearch color="gray.400" />
+          </InputLeftElement>
+          <Input
+            placeholder="Rechercher par nom, email ou matricule..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </InputGroup>
 
         {/* Tableau des membres */}
         <Card>
-          <CardBody p={0}>
-            <Table variant="simple">
-              <Thead bg="gray.50">
-                <Tr>
-                  <Th>Membre</Th>
-                  <Th>Email</Th>
-                  <Th>Matricule</Th>
-                  <Th>Statut</Th>
-                  <Th>Rôle</Th>
-                  <Th>Connexion</Th>
-                  <Th>Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {filteredMembers.map((member) => (
-                  <Tr key={member.id}>
-                    <Td>
-                      <VStack align="start" spacing={1}>
-                        <Text fontWeight="medium">
-                          {member.firstName} {member.lastName}
-                        </Text>
-                        <Text fontSize="sm" color="gray.500">
-                          N° {member.memberNumber}
-                        </Text>
-                      </VStack>
-                    </Td>
-                    <Td>
-                      <Text fontSize="sm">{member.email}</Text>
-                    </Td>
-                    <Td>
-                      {member.matricule ? (
-                        <Badge colorScheme="blue">{member.matricule}</Badge>
-                      ) : (
-                        <Text fontSize="sm" color="gray.400">-</Text>
-                      )}
-                    </Td>
-                    <Td>
-                      <Badge colorScheme={MEMBERSHIP_STATUS[member.membershipStatus]?.color || 'gray'}>
-                        {MEMBERSHIP_STATUS[member.membershipStatus]?.label || member.membershipStatus}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <Badge colorScheme={MEMBER_ROLES[member.role]?.color || 'gray'}>
-                        {MEMBER_ROLES[member.role]?.label || member.role}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <VStack align="start" spacing={1}>
+          <CardBody>
+            {filteredMembers.length === 0 ? (
+              <Center p={8}>
+                <Text color="gray.500">Aucun membre trouvé</Text>
+              </Center>
+            ) : (
+              <Table variant="simple">
+                <Thead>
+                  <Tr>
+                    <Th>Nom</Th>
+                    <Th>Email</Th>
+                    <Th>Matricule</Th>
+                    <Th>Statut</Th>
+                    <Th>Rôle</Th>
+                    <Th>Accès Intranet</Th>
+                    <Th>Actions</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {filteredMembers.map((member) => (
+                    <Tr key={member.id}>
+                      <Td>
+                        <VStack align="start" spacing={0}>
+                          <Text fontWeight="medium">
+                            {member.firstName} {member.lastName}
+                          </Text>
+                          <Text fontSize="sm" color="gray.500">
+                            #{member.memberNumber}
+                          </Text>
+                        </VStack>
+                      </Td>
+                      <Td>{member.email}</Td>
+                      <Td>
+                        {member.matricule ? (
+                          <Badge colorScheme="blue">{member.matricule}</Badge>
+                        ) : (
+                          <Text fontSize="sm" color="gray.400">-</Text>
+                        )}
+                      </Td>
+                      <Td>
+                        <Badge colorScheme={MEMBERSHIP_STATUS[member.membershipStatus]?.color || 'gray'}>
+                          {MEMBERSHIP_STATUS[member.membershipStatus]?.label || member.membershipStatus}
+                        </Badge>
+                      </Td>
+                      <Td>
+                        <Badge colorScheme={MEMBER_ROLES[member.role]?.color || 'gray'}>
+                          {MEMBER_ROLES[member.role]?.label || member.role}
+                        </Badge>
+                      </Td>
+                      <Td>
                         <HStack>
-                          <Badge colorScheme={member.loginEnabled ? 'green' : 'gray'}>
-                            {member.loginEnabled ? 'Activé' : 'Désactivé'}
-                          </Badge>
+                          <Switch
+                            isChecked={member.hasInternalAccess}
+                            onChange={() => toggleInternalAccess(member.id, member.hasInternalAccess)}
+                            size="sm"
+                          />
                           {member.mustChangePassword && (
                             <Badge colorScheme="orange" size="sm">
-                              Changer MDP
+                              Mot de passe à changer
                             </Badge>
                           )}
                         </HStack>
-                        {member.lastLoginAt && (
-                          <Text fontSize="xs" color="gray.500">
-                            Dernière: {new Date(member.lastLoginAt).toLocaleDateString()}
-                          </Text>
-                        )}
-                      </VStack>
-                    </Td>
-                    <Td>
-                      <Menu>
-                        <MenuButton
-                          as={IconButton}
-                          icon={<FiMoreVertical />}
-                          variant="ghost"
-                          size="sm"
-                        />
-                        <MenuList>
-                          <MenuItem icon={<FiEye />} onClick={() => {
-                            setSelectedMember(member);
-                            onEditOpen();
-                          }}>
-                            Voir détails
-                          </MenuItem>
-                          <MenuItem 
-                            icon={member.loginEnabled ? <FiLock /> : <FiUnlock />}
-                            onClick={() => toggleLoginAccess(member.id, member.loginEnabled)}
-                          >
-                            {member.loginEnabled ? 'Désactiver' : 'Activer'} connexion
-                          </MenuItem>
-                          {member.loginEnabled && (
-                            <MenuItem 
+                      </Td>
+                      <Td>
+                        <HStack>
+                          <Tooltip label="Réinitialiser le mot de passe">
+                            <IconButton
+                              size="sm"
                               icon={<FiKey />}
-                              onClick={() => handleResetPassword(member.id)}
-                            >
-                              Réinitialiser mot de passe
-                            </MenuItem>
-                          )}
-                        </MenuList>
-                      </Menu>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-
-            {filteredMembers.length === 0 && (
-              <Center py={8}>
-                <Text color="gray.500">Aucun membre trouvé</Text>
-              </Center>
+                              onClick={() => {
+                                setSelectedMember(member);
+                                onResetPasswordOpen();
+                              }}
+                              isDisabled={!member.hasInternalAccess}
+                            />
+                          </Tooltip>
+                          <Tooltip label="Supprimer le membre">
+                            <IconButton
+                              size="sm"
+                              icon={<FiTrash2 />}
+                              colorScheme="red"
+                              variant="ghost"
+                              onClick={() => confirmDeleteMember(member)}
+                            />
+                          </Tooltip>
+                        </HStack>
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
             )}
           </CardBody>
         </Card>
       </VStack>
 
-      {/* Modal de création d'adhérent avec identifiants */}
+      {/* Modal de création d'adhérent */}
       <CreateMemberWithLogin
         isOpen={isCreateOpen}
         onClose={onCreateClose}
-        onMemberCreated={(member) => {
-          fetchMembers();
-          onCreateClose();
-        }}
+        onMemberCreated={handleMemberCreated}
       />
 
-      {/* Modal de détails du membre */}
-      <Modal isOpen={isEditOpen} onClose={onEditClose} size="xl">
+      {/* Confirmation de réinitialisation du mot de passe */}
+      <Modal isOpen={isResetPasswordOpen} onClose={onResetPasswordClose}>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Détails de l'adhérent</ModalHeader>
+          <ModalHeader>Réinitialiser le mot de passe</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             {selectedMember && (
-              <VStack spacing={4} align="stretch">
-                <SimpleGrid columns={2} spacing={4}>
-                  <FormControl>
-                    <FormLabel>Prénom</FormLabel>
-                    <Input value={selectedMember.firstName} readOnly />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Nom</FormLabel>
-                    <Input value={selectedMember.lastName} readOnly />
-                  </FormControl>
-                </SimpleGrid>
-                
-                <FormControl>
-                  <FormLabel>Email</FormLabel>
-                  <Input value={selectedMember.email} readOnly />
-                </FormControl>
-
-                <SimpleGrid columns={2} spacing={4}>
-                  <FormControl>
-                    <FormLabel>Matricule</FormLabel>
-                    <Input value={selectedMember.matricule || '-'} readOnly />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>N° Adhérent</FormLabel>
-                    <Input value={selectedMember.memberNumber} readOnly />
-                  </FormControl>
-                </SimpleGrid>
-
-                {selectedMember.loginEnabled && (
-                  <Alert status="info">
-                    <AlertIcon />
-                    <VStack align="start" spacing={1}>
-                      <Text fontSize="sm">
-                        Accès connexion activé avec le matricule : <strong>{selectedMember.matricule}</strong>
-                      </Text>
-                      {selectedMember.mustChangePassword && (
-                        <Text fontSize="sm" color="orange.500">
-                          ⚠️ Doit changer son mot de passe à la prochaine connexion
-                        </Text>
-                      )}
-                      {selectedMember.lastLoginAt && (
-                        <Text fontSize="sm" color="gray.500">
-                          Dernière connexion : {new Date(selectedMember.lastLoginAt).toLocaleString()}
-                        </Text>
-                      )}
-                    </VStack>
-                  </Alert>
-                )}
-              </VStack>
+              <Text>
+                Êtes-vous sûr de vouloir réinitialiser le mot de passe de{' '}
+                <strong>{selectedMember.firstName} {selectedMember.lastName}</strong> ?
+              </Text>
             )}
           </ModalBody>
           <ModalFooter>
-            <Button onClick={onEditClose}>Fermer</Button>
+            <Button variant="ghost" onClick={onResetPasswordClose}>
+              Annuler
+            </Button>
+            <Button
+              colorScheme="orange"
+              onClick={() => handleResetPassword(selectedMember?.id)}
+              ml={3}
+            >
+              Réinitialiser
+            </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* Confirmation de suppression */}
+      <AlertDialog
+        isOpen={isDeleteOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={onDeleteClose}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Supprimer l'adhérent
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              {memberToDelete && (
+                <>
+                  Êtes-vous sûr de vouloir supprimer l'adhérent{' '}
+                  <strong>{memberToDelete.firstName} {memberToDelete.lastName}</strong> ?
+                  <br />
+                  <Text color="red.500" mt={2} fontSize="sm">
+                    ⚠️ Cette action est irréversible et supprimera définitivement toutes les données associées.
+                  </Text>
+                </>
+              )}
+            </AlertDialogBody>
+
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={onDeleteClose}>
+                Annuler
+              </Button>
+              <Button colorScheme="red" onClick={handleDeleteMember} ml={3}>
+                Supprimer
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 }
