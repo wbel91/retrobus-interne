@@ -1195,6 +1195,54 @@ app.get('/newsletter/export', requireAuth, async (req, res) => {
   }
 });
 
+// ---------- Member Helper Functions ----------
+function generateTemporaryPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijklmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < 8; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+async function hashPassword(password) {
+  const saltRounds = 12;
+  return await bcrypt.hash(password, saltRounds);
+}
+
+function transformMember(member) {
+  if (!member) return null;
+  
+  return {
+    id: member.id,
+    memberNumber: member.memberNumber,
+    matricule: member.matricule,
+    firstName: member.firstName,
+    lastName: member.lastName,
+    email: member.email,
+    phone: member.phone,
+    address: member.address,
+    city: member.city,
+    postalCode: member.postalCode,
+    birthDate: member.birthDate,
+    membershipType: member.membershipType,
+    membershipStatus: member.membershipStatus,
+    role: member.role,
+    hasInternalAccess: member.hasInternalAccess,
+    hasExternalAccess: member.hasExternalAccess,
+    loginEnabled: member.loginEnabled,
+    mustChangePassword: member.mustChangePassword,
+    newsletter: member.newsletter,
+    paymentAmount: member.paymentAmount,
+    paymentMethod: member.paymentMethod,
+    lastPaymentDate: member.lastPaymentDate,
+    notes: member.notes,
+    createdAt: member.createdAt,
+    updatedAt: member.updatedAt,
+    createdBy: member.createdBy
+  };
+}
+
 // ---------- Members API (prefix /api) ----------
 app.get('/api/members', authenticateToken, async (req, res) => {
   if (!ensureDB(res)) return;
