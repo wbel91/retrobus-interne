@@ -1636,96 +1636,90 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
   }
 });
 
-// Route pour créer un profil membre pour un admin existant
-app.post('/api/members/create-admin-profile', requireAuth, async (req, res) => {
+// Route pour sauvegarder les paramètres HelloAsso d'un événement
+app.post('/api/events/:id/helloasso', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-  
+
   try {
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
+    const { id } = req.params;
+    const { eventUrl, organizationSlug, eventSlug, formId } = req.body;
 
-    const {
-      adminMatricule, // Le matricule admin existant (ex: w.belaidi)
-      firstName,
-      lastName,
-      email,
-      membershipType = 'STANDARD',
-      membershipStatus = 'ACTIVE',
-      phone,
-      address,
-      city,
-      postalCode,
-      birthDate,
-      paymentAmount,
-      paymentMethod = 'CASH',
-      notes,
-      newsletter = true
-    } = req.body;
-
-    // Validation
-    if (!adminMatricule || !firstName || !lastName || !email) {
-      return res.status(400).json({ error: 'Matricule admin, prénom, nom et email requis' });
-    }
-
-    // Vérifier que le matricule admin existe (optionnel, on peut juste faire confiance)
-    
-    // Vérifier unicité email
-    const existingMember = await prisma.member.findFirst({
-      where: { email }
+    // Vérifier que l'événement existe
+    const event = await prisma.event.findUnique({
+      where: { id }
     });
 
-    if (existingMember) {
-      return res.status(400).json({ error: 'Un membre avec cet email existe déjà' });
+    if (!event) {
+      return res.status(404).json({ error: 'Événement non trouvé' });
     }
 
-    // Générer numéro d'adhérent unique
-    const year = new Date().getFullYear();
-    const count = await prisma.member.count() + 1;
-    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
-
-    // Créer le profil membre lié à l'admin
-    const member = await prisma.member.create({
+    // Mettre à jour les paramètres HelloAsso
+    const updatedEvent = await prisma.event.update({
+      where: { id },
       data: {
-        memberNumber,
-        firstName,
-        lastName,
-        email,
-        matricule: adminMatricule, // Utiliser le même matricule que l'admin
-        membershipType,
-        membershipStatus,
-        role: 'ADMIN', // Rôle admin dans le système membre
-        hasInternalAccess: true,
-        hasExternalAccess: true,
-        loginEnabled: true, // L'admin peut déjà se connecter
-        mustChangePassword: false, // Pas besoin, il a déjà son mot de passe admin
-        phone,
-        address,
-        city,
-        postalCode,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
-        paymentMethod,
-        newsletter,
-        notes: `Profil créé pour l'admin ${adminMatricule}. ${notes || ''}`,
-        createdBy: req.user?.username || 'system',
-        lastPaymentDate: paymentAmount ? new Date() : null,
-        // Marquer que c'est lié à un compte admin
-        isLinkedToAdmin: true,
-        adminMatricule: adminMatricule
+        helloAssoUrl: eventUrl,
+        helloAssoOrg: organizationSlug,
+        helloAssoEvent: eventSlug,
+        helloAssoFormId: formId,
+        updatedAt: new Date()
       }
     });
 
-    res.status(201).json({
-      member: transformMember(member),
-      message: `Profil adhérent créé pour l'admin ${adminMatricule}`,
-      isAdminProfile: true
+    res.json({
+      message: 'Paramètres HelloAsso mis à jour',
+      event: updatedEvent
     });
 
   } catch (error) {
-    console.error('Error creating admin member profile:', error);
-    res.status(500).json({ error: 'Erreur lors de la création du profil adhérent admin' });
+    console.error('Error updating HelloAsso settings:', error);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour des paramètres HelloAsso' });
+  }
+});
+
+// Route pour récupérer les participants HelloAsso d'un événement
+app.get('/api/events/:id/helloasso/participants', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+
+  try {
+    const { id } = req.params;
+
+    // Récupérer l'événement avec ses paramètres HelloAsso
+    const event = await prisma.event.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        helloAssoUrl: true,
+        helloAssoOrg: true,
+        helloAssoEvent: true,
+        helloAssoFormId: true
+      }
+    });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Événement non trouvé' });
+    }
+
+    if (!event.helloAssoOrg || !event.helloAssoEvent) {
+      return res.status(400).json({ error: 'Paramètres HelloAsso non configurés pour cet événement' });
+    }
+
+    // Ici, vous pourriez implémenter la logique côté serveur pour récupérer les participants HelloAsso
+    // Pour l'instant, on retourne les paramètres pour que le client fasse l'appel
+
+    res.json({
+      event: {
+        id: event.id,
+        title: event.title,
+        helloAssoOrg: event.helloAssoOrg,
+        helloAssoEvent: event.helloAssoEvent,
+        helloAssoUrl: event.helloAssoUrl
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching HelloAsso participants:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des participants HelloAsso' });
   }
 });
 

@@ -21,6 +21,7 @@ import {
 import { Link as RouterLink } from 'react-router-dom';
 import { eventsAPI } from '../api/index.js';
 import { membersAPI } from '../api/members.js';
+import axios from 'axios';
 
 const EventsManagement = () => {
   const [events, setEvents] = useState([]);
@@ -748,11 +749,366 @@ const EventsManagement = () => {
     return 0;
   };
 
-  // Calculs pour l'événement sélectionné
-  const totalCapacity = routes.reduce((sum, route) => sum + route.capacity, 0);
-  const confirmedParticipants = participants.filter(p => p.status === 'confirmed').length;
-  const pendingParticipants = participants.filter(p => p.status === 'pending').length;
-  const availableSpaces = totalCapacity - confirmedParticipants;
+  // États HelloAsso (à ajouter avec les autres états en haut du composant)
+  const [helloAssoSettings, setHelloAssoSettings] = useState({
+    eventUrl: '',
+    formId: '',
+    organizationSlug: '',
+    eventSlug: '',
+    accessToken: ''
+  });
+
+  const [helloAssoParticipants, setHelloAssoParticipants] = useState([]);
+  const [loadingHelloAsso, setLoadingHelloAsso] = useState(false);
+
+  // Configuration HelloAsso
+  const HELLOASSO_CONFIG = {
+    clientId: import.meta.env.VITE_HELLOASSO_CLIENT_ID || '',
+    clientSecret: import.meta.env.VITE_HELLOASSO_CLIENT_SECRET || '',
+    apiUrl: 'https://api.helloasso.com/v5',
+    authUrl: 'https://api.helloasso.com/oauth2/token'
+  };
+
+  // Fonctions HelloAsso
+  const authenticateHelloAsso = async () => {
+    try {
+      const response = await fetch(HELLOASSO_CONFIG.authUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          client_id: HELLOASSO_CONFIG.clientId,
+          client_secret: HELLOASSO_CONFIG.clientSecret,
+          grant_type: 'client_credentials'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Authentification HelloAsso échouée');
+      }
+
+      const data = await response.json();
+      const accessToken = data.access_token;
+      
+      setHelloAssoSettings(prev => ({ ...prev, accessToken }));
+      return accessToken;
+    } catch (error) {
+      console.error('❌ Erreur authentification HelloAsso:', error);
+      throw new Error('Échec de l\'authentification HelloAsso');
+    }
+  };
+
+  const fetchHelloAssoParticipants = async (eventSlug, organizationSlug) => {
+    try {
+      setLoadingHelloAsso(true);
+      
+      let accessToken = helloAssoSettings.accessToken;
+      if (!accessToken) {
+        accessToken = await authenticateHelloAsso();
+      }
+
+      const response = await fetch(
+        `${HELLOASSO_CONFIG.apiUrl}/organizations/${organizationSlug}/forms/Event/${eventSlug}/orders`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erreur HelloAsso API: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const orders = result.data || [];
+      const participants = [];
+
+      orders.forEach(order => {
+        order.items.forEach(item => {
+          const participant = {
+            id: `helloasso-${order.id}-${item.id}`,
+            name: `${order.payer.firstName} ${order.payer.lastName}`,
+            email: order.payer.email,
+            phone: order.payer.phoneNumber || '',
+            amount: item.amount / 100,
+            status: 'confirmed',
+            source: 'helloasso',
+            orderDate: order.date,
+            orderNumber: order.id,
+            itemName: item.name,
+            customFields: item.customFields || []
+          };
+
+          // Traiter les champs personnalisés
+          item.customFields?.forEach(field => {
+            if (field.name.toLowerCase().includes('téléphone')) {
+              participant.phone = field.answer;
+            }
+            if (field.name.toLowerCase().includes('age')) {
+              participant.age = field.answer;
+            }
+          });
+
+          participants.push(participant);
+        });
+      });
+
+      setHelloAssoParticipants(participants);
+      
+      toast({
+        status: 'success',
+        title: 'Participants HelloAsso chargés',
+        description: `${participants.length} participant(s) trouvé(s)`,
+        duration: 3000
+      });
+
+      return participants;
+
+    } catch (error) {
+      console.error('❌ Erreur récupération HelloAsso:', error);
+      toast({
+        status: 'error',
+        title: 'Erreur HelloAsso',
+        description: error.message || 'Impossible de récupérer les participants',
+        duration: 5000
+      });
+      return [];
+    } finally {
+      setLoadingHelloAsso(false);
+    }
+  };
+
+  const saveHelloAssoSettings = async (eventId, settings) => {
+    try {
+      setSaving(true);
+      
+      const response = await fetch(`${eventsAPI.baseURL}/events/${eventId}/helloasso`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          eventUrl: settings.eventUrl,
+          organizationSlug: settings.organizationSlug,
+          eventSlug: settings.eventSlug,
+          formId: settings.formId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur sauvegarde HelloAsso');
+      }
+
+      toast({
+        status: 'success',
+        title: 'Paramètres HelloAsso sauvegardés',
+        description: 'La configuration HelloAsso a été mise à jour',
+        duration: 3000
+      });
+
+      // Recharger les données de l'événement
+      await fetchEventDetails(eventId);
+
+    } catch (error) {
+      console.error('❌ Erreur sauvegarde HelloAsso:', error);
+      toast({
+        status: 'error',
+        title: 'Erreur',
+        description: 'Impossible de sauvegarder les paramètres HelloAsso',
+        duration: 5000
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Composant HelloAsso corrigé (remplacer les déclarations existantes)
+  const HelloAssoManagement = ({ event }) => {
+    const [localSettings, setLocalSettings] = useState({
+      eventUrl: event?.helloAssoUrl || '',
+      organizationSlug: event?.helloAssoOrg || '',
+      eventSlug: event?.helloAssoEvent || '',
+      formId: event?.helloAssoFormId || ''
+    });
+
+    const handleUrlParse = (url) => {
+      const match = url.match(/helloasso\.com\/associations\/([^\/]+)\/evenements\/([^\/?\s]+)/);
+      if (match) {
+        setLocalSettings(prev => ({
+          ...prev,
+          eventUrl: url,
+          organizationSlug: match[1],
+          eventSlug: match[2]
+        }));
+        
+        toast({
+          status: 'success',
+          title: 'URL analysée',
+          description: `Organisation: ${match[1]}, Événement: ${match[2]}`,
+          duration: 3000
+        });
+      } else {
+        toast({
+          status: 'warning',
+          title: 'URL non reconnue',
+          description: 'Vérifiez le format de l\'URL HelloAsso',
+          duration: 3000
+        });
+      }
+    };
+
+    const handleSyncParticipants = async () => {
+      if (!localSettings.organizationSlug || !localSettings.eventSlug) {
+        toast({
+          status: 'warning',
+          title: 'Configuration incomplète',
+          description: 'Veuillez configurer l\'organisation et l\'événement HelloAsso',
+          duration: 3000
+        });
+        return;
+      }
+
+      await fetchHelloAssoParticipants(localSettings.eventSlug, localSettings.organizationSlug);
+    };
+
+    return (
+      <VStack spacing={6} align="stretch">
+        {/* Configuration HelloAsso */}
+        <Card>
+          <CardHeader>
+            <Heading size="md">🎟️ Configuration HelloAsso</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack spacing={4} align="stretch">
+              <FormControl>
+                <FormLabel>URL de l'événement HelloAsso</FormLabel>
+                <HStack>
+                  <Input
+                    placeholder="https://www.helloasso.com/associations/votre-asso/evenements/votre-event"
+                    value={localSettings.eventUrl}
+                    onChange={(e) => {
+                      setLocalSettings(prev => ({ ...prev, eventUrl: e.target.value }));
+                    }}
+                  />
+                  <Button
+                    onClick={() => handleUrlParse(localSettings.eventUrl)}
+                    isDisabled={!localSettings.eventUrl}
+                    colorScheme="blue"
+                    variant="outline"
+                  >
+                    Parser
+                  </Button>
+                </HStack>
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  L'URL sera automatiquement analysée pour extraire les paramètres
+                </Text>
+              </FormControl>
+
+              <SimpleGrid columns={2} spacing={4}>
+                <FormControl>
+                  <FormLabel>Organisation</FormLabel>
+                  <Input
+                    placeholder="nom-organisation"
+                    value={localSettings.organizationSlug}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, organizationSlug: e.target.value }))}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Événement</FormLabel>
+                  <Input
+                    placeholder="nom-evenement"
+                    value={localSettings.eventSlug}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, eventSlug: e.target.value }))}
+                  />
+                </FormControl>
+              </SimpleGrid>
+
+              <HStack>
+                <Button
+                  colorScheme="blue"
+                  onClick={() => saveHelloAssoSettings(event.id, localSettings)}
+                  isLoading={saving}
+                  leftIcon={<FiSave />}
+                >
+                  Sauvegarder
+                </Button>
+                <Button
+                  colorScheme="green"
+                  onClick={handleSyncParticipants}
+                  isLoading={loadingHelloAsso}
+                  leftIcon={<FiRefreshCw />}
+                  isDisabled={!localSettings.organizationSlug || !localSettings.eventSlug}
+                >
+                  Synchroniser
+                </Button>
+              </HStack>
+            </VStack>
+          </CardBody>
+        </Card>
+
+        {/* Liste des participants HelloAsso */}
+        {helloAssoParticipants.length > 0 && (
+          <Card>
+            <CardHeader>
+              <HStack justify="space-between">
+                <Heading size="md">👥 Participants HelloAsso ({helloAssoParticipants.length})</Heading>
+                <Badge colorScheme="green">Synchronisé</Badge>
+              </HStack>
+            </CardHeader>
+            <CardBody>
+              <Box overflowX="auto">
+                <Table variant="simple" size="sm">
+                  <Thead>
+                    <Tr>
+                      <Th>Nom</Th>
+                      <Th>Email</Th>
+                      <Th>Téléphone</Th>
+                      <Th>Montant</Th>
+                      <Th>Date</Th>
+                      <Th>Commande</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {helloAssoParticipants.map((participant) => (
+                      <Tr key={participant.id}>
+                        <Td fontWeight="bold">{participant.name}</Td>
+                        <Td>{participant.email}</Td>
+                        <Td>{participant.phone || '-'}</Td>
+                        <Td>{participant.amount}€</Td>
+                        <Td>{new Date(participant.orderDate).toLocaleDateString('fr-FR')}</Td>
+                        <Td>
+                          <Code fontSize="xs">#{participant.orderNumber}</Code>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </Box>
+            </CardBody>
+          </Card>
+        )}
+
+        {loadingHelloAsso && (
+          <Center p={8}>
+            <VStack>
+              <Spinner size="lg" />
+              <Text>Synchronisation avec HelloAsso...</Text>
+            </VStack>
+          </Center>
+        )}
+      </VStack>
+    );
+  };
+
+  // Dans les TabPanels du modal, remplacer l'onglet HelloAsso par :
+  // <TabPanel>
+  //   <HelloAssoManagement event={selectedEvent} />
+  // </TabPanel>
 
   return (
     <Container maxW="7xl" py={6}>
@@ -1037,6 +1393,9 @@ const EventsManagement = () => {
                 <Tab>
                   <FiDollarSign /> 
                   <Text ml={2}>Finances</Text>
+                </Tab>
+                <Tab>
+                  🎟️ HelloAsso
                 </Tab>
               </TabList>
 
@@ -1327,7 +1686,7 @@ const EventsManagement = () => {
                                 {route.stops.length > 2 && (
                                   <IconButton
                                     icon={<FiTrash2 />}
-                                    size="xs"
+                                    size="sm"
                                     variant="ghost"
                                     colorScheme="red"
                                     onClick={() => removeStop(route.id, index)}
@@ -1508,6 +1867,11 @@ const EventsManagement = () => {
                       </Card>
                     </SimpleGrid>
                   </VStack>
+                </TabPanel>
+
+                {/* Onglet HelloAsso */}
+                <TabPanel>
+                  <HelloAssoManagement event={selectedEvent} />
                 </TabPanel>
               </TabPanels>
             </Tabs>
@@ -1818,8 +2182,7 @@ const EventsManagement = () => {
                               value={newStop.address}
                               onChange={(e) => setNewStop(prev => ({ ...prev, address: e.target.value }))}
                               placeholder="Adresse complète"
-                              size="sm"
-                            />
+                              size="sm                            />
                           </VStack>
                         </CardBody>
                       </Card>
