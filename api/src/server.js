@@ -1335,6 +1335,11 @@ app.post('/api/members', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont) - lettres minuscules uniquement' });
     }
 
+    // Remplacer par une validation plus flexible :
+    if (matricule && !/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
+    }
+
     // Vérifier unicité email et matricule
     const whereConditions = [{ email }];
     if (matricule) {
@@ -1431,8 +1436,9 @@ app.post('/members/:id/add-login', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Matricule requis' });
     }
     
-    if (!/^[a-z]+\.[a-z]+$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont)' });
+    // Remplacer par une validation plus flexible :
+    if (!/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
     }
 
     // Vérifier que le membre existe
@@ -1558,8 +1564,8 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
     }
     
     // Valider le format prénom.nom (lettres minuscules uniquement)
-    if (!/^[a-z]+\.[a-z]+$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont) - lettres minuscules uniquement' });
+    if (!/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
+      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
     }
 
     // Vérifier unicité email et matricule
@@ -1630,53 +1636,96 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
   }
 });
 
-// Route pour rechercher des membres similaires (pour détection de doublons/fusion)
-app.get('/api/members/search-similar', requireAuth, async (req, res) => {
+// Route pour créer un profil membre pour un admin existant
+app.post('/api/members/create-admin-profile', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-
+  
   try {
-    const { firstName, lastName, email } = req.query;
-
-    if (!firstName && !lastName && !email) {
-      return res.status(400).json({ error: 'Au moins un critère de recherche requis' });
+    // Vérifier que l'utilisateur est admin
+    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
     }
 
-    let whereCondition = {
-      OR: []
-    };
+    const {
+      adminMatricule, // Le matricule admin existant (ex: w.belaidi)
+      firstName,
+      lastName,
+      email,
+      membershipType = 'STANDARD',
+      membershipStatus = 'ACTIVE',
+      phone,
+      address,
+      city,
+      postalCode,
+      birthDate,
+      paymentAmount,
+      paymentMethod = 'CASH',
+      notes,
+      newsletter = true
+    } = req.body;
 
-    if (email) {
-      whereCondition.OR.push({ email: { contains: email, mode: 'insensitive' } });
+    // Validation
+    if (!adminMatricule || !firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Matricule admin, prénom, nom et email requis' });
     }
 
-    if (firstName && lastName) {
-      whereCondition.OR.push({
-        AND: [
-          { firstName: { contains: firstName, mode: 'insensitive' } },
-          { lastName: { contains: lastName, mode: 'insensitive' } }
-        ]
-      });
+    // Vérifier que le matricule admin existe (optionnel, on peut juste faire confiance)
+    
+    // Vérifier unicité email
+    const existingMember = await prisma.member.findFirst({
+      where: { email }
+    });
+
+    if (existingMember) {
+      return res.status(400).json({ error: 'Un membre avec cet email existe déjà' });
     }
 
-    const similarMembers = await prisma.member.findMany({
-      where: whereCondition,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        matricule: true,
-        loginEnabled: true,
-        membershipStatus: true,
-        createdAt: true
+    // Générer numéro d'adhérent unique
+    const year = new Date().getFullYear();
+    const count = await prisma.member.count() + 1;
+    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
+
+    // Créer le profil membre lié à l'admin
+    const member = await prisma.member.create({
+      data: {
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        matricule: adminMatricule, // Utiliser le même matricule que l'admin
+        membershipType,
+        membershipStatus,
+        role: 'ADMIN', // Rôle admin dans le système membre
+        hasInternalAccess: true,
+        hasExternalAccess: true,
+        loginEnabled: true, // L'admin peut déjà se connecter
+        mustChangePassword: false, // Pas besoin, il a déjà son mot de passe admin
+        phone,
+        address,
+        city,
+        postalCode,
+        birthDate: birthDate ? new Date(birthDate) : null,
+        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
+        paymentMethod,
+        newsletter,
+        notes: `Profil créé pour l'admin ${adminMatricule}. ${notes || ''}`,
+        createdBy: req.user?.username || 'system',
+        lastPaymentDate: paymentAmount ? new Date() : null,
+        // Marquer que c'est lié à un compte admin
+        isLinkedToAdmin: true,
+        adminMatricule: adminMatricule
       }
     });
 
-    res.json({ members: similarMembers });
+    res.status(201).json({
+      member: transformMember(member),
+      message: `Profil adhérent créé pour l'admin ${adminMatricule}`,
+      isAdminProfile: true
+    });
 
   } catch (error) {
-    console.error('Error searching similar members:', error);
-    res.status(500).json({ error: 'Erreur lors de la recherche de membres similaires' });
+    console.error('Error creating admin member profile:', error);
+    res.status(500).json({ error: 'Erreur lors de la création du profil adhérent admin' });
   }
 });
 

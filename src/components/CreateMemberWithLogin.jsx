@@ -6,6 +6,7 @@ import {
   useToast, Box, Badge, SimpleGrid, Textarea, Checkbox,
   Divider, Card, CardBody, CardHeader, Heading
 } from '@chakra-ui/react';
+import { USERS } from '../api/auth.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -63,6 +64,36 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
   const [result, setResult] = useState(null);
   const toast = useToast();
 
+  // Fonction pour détecter les admins existants
+  const detectExistingAdmin = (firstName, lastName, email) => {
+    const adminEntries = Object.entries(USERS);
+    
+    for (const [matricule, admin] of adminEntries) {
+      // Correspondance par nom
+      if (admin.prenom?.toLowerCase() === firstName.toLowerCase() && 
+          admin.nom?.toLowerCase() === lastName.toLowerCase()) {
+        return { 
+          ...admin, 
+          matricule,
+          isAdmin: true,
+          type: 'admin'
+        };
+      }
+      
+      // Correspondance par matricule généré
+      const expectedMatricule = `${firstName.toLowerCase().charAt(0)}.${lastName.toLowerCase().replace(/[^a-z]/g, '')}`;
+      if (matricule === expectedMatricule) {
+        return { 
+          ...admin, 
+          matricule,
+          isAdmin: true,
+          type: 'admin'
+        };
+      }
+    }
+    return null;
+  };
+
   // Charger les membres existants pour détecter les doublons
   const fetchExistingMembers = async () => {
     try {
@@ -91,93 +122,119 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
   // Rechercher des membres similaires quand les champs changent
   useEffect(() => {
     const searchSimilar = async () => {
-      if (formData.firstName && formData.lastName && formData.email) {
-        try {
-          const params = new URLSearchParams({
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            email: formData.email
+      if (formData.firstName && formData.lastName) {
+        
+        // 1. D'abord chercher dans les admins existants
+        const existingAdmin = detectExistingAdmin(formData.firstName, formData.lastName, formData.email);
+        
+        if (existingAdmin) {
+          console.log('🔑 Admin existant détecté:', existingAdmin);
+          setSuggestedMember({
+            firstName: existingAdmin.prenom,
+            lastName: existingAdmin.nom,
+            matricule: existingAdmin.matricule,
+            isAdmin: true,
+            type: 'admin',
+            roles: existingAdmin.roles
           });
+          setShowLinkSuggestion(true);
+          return;
+        }
 
-          const response = await fetch(`${API_BASE_URL}/api/members/search-similar?${params}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
+        // 2. Sinon chercher dans les membres de la base de données
+        if (formData.email) {
+          try {
+            const params = new URLSearchParams({
+              firstName: formData.firstName,
+              lastName: formData.lastName,
+              email: formData.email
+            });
 
-          if (response.ok) {
-            const data = await response.json();
-            console.log('🔍 Membres similaires trouvés:', data.members);
-            
-            const similar = data.members.find(member => 
-              (member.email.toLowerCase() === formData.email.toLowerCase()) ||
-              (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
-               member.lastName.toLowerCase() === formData.lastName.toLowerCase())
-            );
+            const response = await fetch(`${API_BASE_URL}/api/members/search-similar?${params}`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
 
-            if (similar && (!similar.loginEnabled || similar.loginEnabled === false)) {
-              console.log('✅ Proposition de fusion pour:', similar);
-              setSuggestedMember(similar);
-              setShowLinkSuggestion(true);
-            } else if (similar && similar.loginEnabled) {
-              console.log('⚠️ Membre avec accès déjà activé:', similar);
-              setSuggestedMember(null);
-              setShowLinkSuggestion(false);
-            } else {
-              setSuggestedMember(null);
-              setShowLinkSuggestion(false);
+            if (response.ok) {
+              const data = await response.json();
+              const similar = data.members.find(member => 
+                (member.email.toLowerCase() === formData.email.toLowerCase()) ||
+                (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
+                 member.lastName.toLowerCase() === formData.lastName.toLowerCase())
+              );
+
+              if (similar && (!similar.loginEnabled || similar.loginEnabled === false)) {
+                console.log('✅ Membre sans accès détecté:', similar);
+                setSuggestedMember({ ...similar, type: 'member' });
+                setShowLinkSuggestion(true);
+              } else if (similar && similar.loginEnabled) {
+                console.log('⚠️ Membre avec accès déjà activé:', similar);
+                setSuggestedMember({ ...similar, type: 'member' });
+                setShowLinkSuggestion(false);
+              } else {
+                setSuggestedMember(null);
+                setShowLinkSuggestion(false);
+              }
             }
-          }
-        } catch (error) {
-          console.error('Erreur recherche membres similaires:', error);
-          // Fallback sur l'ancienne méthode
-          if (Array.isArray(existingMembers)) {
-            const similar = existingMembers.find(member => 
-              (member.email.toLowerCase() === formData.email.toLowerCase()) ||
-              (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
-               member.lastName.toLowerCase() === formData.lastName.toLowerCase())
-            );
-            
-            if (similar && (!similar.loginEnabled || similar.loginEnabled === false)) {
-              setSuggestedMember(similar);
-              setShowLinkSuggestion(true);
-            } else {
-              setSuggestedMember(null);
-              setShowLinkSuggestion(false);
-            }
+          } catch (error) {
+            console.error('❌ Erreur recherche membres:', error);
           }
         }
+      } else {
+        setSuggestedMember(null);
+        setShowLinkSuggestion(false);
       }
     };
 
-    // Délai pour éviter trop de requêtes
-    const timer = setTimeout(searchSimilar, 500);
+    const timer = setTimeout(searchSimilar, 300);
     return () => clearTimeout(timer);
-  }, [formData.firstName, formData.lastName, formData.email, existingMembers]);
+  }, [formData.firstName, formData.lastName, formData.email]);
 
   // Auto-générer le matricule basé sur prénom.nom
   useEffect(() => {
-    if (formData.firstName && formData.lastName) {
+    if (formData.firstName && formData.lastName && !suggestedMember?.isAdmin) {
       const matricule = `${formData.firstName.toLowerCase().charAt(0)}.${formData.lastName.toLowerCase().replace(/[^a-z]/g, '')}`;
       setFormData(prev => ({ ...prev, matricule }));
     }
-  }, [formData.firstName, formData.lastName]);
+  }, [formData.firstName, formData.lastName, suggestedMember]);
 
   const linkExistingMember = () => {
     if (suggestedMember) {
-      setFormData(prev => ({
-        ...prev,
-        firstName: suggestedMember.firstName,
-        lastName: suggestedMember.lastName,
-        email: suggestedMember.email,
-        phone: suggestedMember.phone || '',
-        address: suggestedMember.address || '',
-        city: suggestedMember.city || '',
-        postalCode: suggestedMember.postalCode || '',
-        birthDate: suggestedMember.birthDate || '',
-        membershipType: suggestedMember.membershipType,
-        membershipStatus: suggestedMember.membershipStatus
-      }));
+      if (suggestedMember.isAdmin) {
+        setFormData(prev => ({
+          ...prev,
+          firstName: suggestedMember.firstName,
+          lastName: suggestedMember.lastName,
+          matricule: suggestedMember.matricule,
+          role: 'ADMIN',
+          hasInternalAccess: true,
+          hasExternalAccess: true,
+        }));
+        
+        setShowLinkSuggestion(false);
+        
+        toast({
+          title: 'Données admin importées',
+          description: 'Informations admin pré-remplies. Complétez les détails d\'adhérent.',
+          status: 'info',
+          duration: 3000
+        });
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          firstName: suggestedMember.firstName,
+          lastName: suggestedMember.lastName,
+          email: suggestedMember.email,
+          phone: suggestedMember.phone || '',
+          address: suggestedMember.address || '',
+          city: suggestedMember.city || '',
+          postalCode: suggestedMember.postalCode || '',
+          birthDate: suggestedMember.birthDate || '',
+          membershipType: suggestedMember.membershipType,
+          membershipStatus: suggestedMember.membershipStatus
+        }));
+      }
     }
   };
 
@@ -187,30 +244,55 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
     setResult(null);
 
     try {
-      // Si on rattache un membre existant
       if (suggestedMember && showLinkSuggestion) {
-        const response = await fetch(`${API_BASE_URL}/members/${suggestedMember.id}/add-login`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            matricule: formData.matricule,
-            role: formData.role,
-            hasInternalAccess: formData.hasInternalAccess
-          })
-        });
+        if (suggestedMember.isAdmin) {
+          // Créer un profil adhérent pour un admin existant
+          const response = await fetch(`${API_BASE_URL}/api/members/create-admin-profile`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              ...formData,
+              adminMatricule: suggestedMember.matricule
+            })
+          });
 
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        
-        setResult(data);
-        toast({
-          status: 'success',
-          title: 'Accès créé',
-          description: 'Identifiants de connexion ajoutés au membre existant'
-        });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error);
+          
+          setResult(data);
+          toast({
+            status: 'success',
+            title: 'Profil adhérent créé',
+            description: `Profil adhérent créé pour l'admin ${suggestedMember.matricule}`
+          });
+        } else {
+          // Rattacher un membre existant
+          const response = await fetch(`${API_BASE_URL}/members/${suggestedMember.id}/add-login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              matricule: formData.matricule,
+              role: formData.role,
+              hasInternalAccess: formData.hasInternalAccess
+            })
+          });
+
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error);
+          
+          setResult(data);
+          toast({
+            status: 'success',
+            title: 'Accès créé',
+            description: 'Identifiants ajoutés au membre existant'
+          });
+        }
       } else {
         // Créer un nouveau membre
         const response = await fetch(`${API_BASE_URL}/members/create-with-login`, {
@@ -229,7 +311,7 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
         toast({
           status: 'success',
           title: 'Adhérent créé',
-          description: 'Identifiants de connexion générés avec succès'
+          description: 'Nouveau membre créé avec identifiants'
         });
       }
 
@@ -280,7 +362,10 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
       <ModalOverlay />
       <ModalContent maxH="90vh">
         <ModalHeader>
-          {suggestedMember && showLinkSuggestion ? 'Rattacher un membre existant' : 'Créer un adhérent avec identifiants'}
+          {suggestedMember && showLinkSuggestion ? 
+            (suggestedMember.isAdmin ? 'Créer profil adhérent pour admin' : 'Rattacher un membre existant') : 
+            'Créer un adhérent avec identifiants'
+          }
         </ModalHeader>
         <ModalCloseButton />
         
@@ -289,7 +374,8 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
             <VStack spacing={4} align="stretch">
               <Alert status="success">
                 <AlertIcon />
-                {suggestedMember ? 'Accès créé avec succès !' : 'Adhérent créé avec succès !'}
+                {suggestedMember?.isAdmin ? 'Profil adhérent créé pour admin !' : 
+                 suggestedMember ? 'Accès créé avec succès !' : 'Adhérent créé avec succès !'}
               </Alert>
               
               <Box p={4} bg="gray.50" borderRadius="md">
@@ -299,34 +385,81 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                     <Text fontSize="sm" color="gray.600">Matricule :</Text>
                     <Badge colorScheme="blue" fontSize="md">{result.member?.matricule || formData.matricule}</Badge>
                   </Box>
-                  <Box>
-                    <Text fontSize="sm" color="gray.600">Mot de passe temporaire :</Text>
-                    <Badge colorScheme="red" fontSize="md">{result.temporaryPassword}</Badge>
-                  </Box>
+                  {result.temporaryPassword && (
+                    <Box>
+                      <Text fontSize="sm" color="gray.600">Mot de passe temporaire :</Text>
+                      <Badge colorScheme="red" fontSize="md">{result.temporaryPassword}</Badge>
+                    </Box>
+                  )}
                 </SimpleGrid>
-                <Alert status="warning" mt={3}>
-                  <AlertIcon />
-                  <Text fontSize="sm">
-                    Communiquez ces identifiants de manière sécurisée. 
-                    L'utilisateur devra changer le mot de passe à la première connexion.
-                  </Text>
-                </Alert>
+                {result.temporaryPassword && (
+                  <Alert status="warning" mt={3}>
+                    <AlertIcon />
+                    <Text fontSize="sm">
+                      Communiquez ces identifiants de manière sécurisée. 
+                      L'utilisateur devra changer le mot de passe à la première connexion.
+                    </Text>
+                  </Alert>
+                )}
+                {result.isAdminProfile && (
+                  <Alert status="info" mt={3}>
+                    <AlertIcon />
+                    <Text fontSize="sm">
+                      Profil adhérent créé pour l'admin. Il peut maintenant accéder à "Mon Adhésion" avec son matricule admin.
+                    </Text>
+                  </Alert>
+                )}
               </Box>
             </VStack>
           ) : (
             <VStack spacing={6}>
-              {/* Suggestion de rattachement */}
-              {showLinkSuggestion && suggestedMember && (
+              {/* Suggestion de fusion admin */}
+              {showLinkSuggestion && suggestedMember?.isAdmin && (
+                <Alert status="success">
+                  <AlertIcon />
+                  <Box>
+                    <Text fontWeight="bold">Compte administrateur détecté !</Text>
+                    <Text fontSize="sm">
+                      Compte admin : {suggestedMember.firstName} {suggestedMember.lastName} ({suggestedMember.matricule})
+                    </Text>
+                    <Text fontSize="xs" color="green.600">
+                      Rôles admin : {suggestedMember.roles?.join(', ')}
+                    </Text>
+                    <Button size="sm" mt={2} onClick={linkExistingMember}>
+                      Créer profil adhérent pour cet admin
+                    </Button>
+                  </Box>
+                </Alert>
+              )}
+
+              {/* Suggestion de fusion membre */}
+              {showLinkSuggestion && suggestedMember && !suggestedMember.isAdmin && (
                 <Alert status="info">
                   <AlertIcon />
                   <Box>
                     <Text fontWeight="bold">Membre existant détecté !</Text>
                     <Text fontSize="sm">
-                      Un membre avec le même nom/email existe déjà : {suggestedMember.firstName} {suggestedMember.lastName} ({suggestedMember.email})
+                      Membre : {suggestedMember.firstName} {suggestedMember.lastName} ({suggestedMember.email})
                     </Text>
                     <Button size="sm" mt={2} onClick={linkExistingMember}>
                       Rattacher cet adhérent
                     </Button>
+                  </Box>
+                </Alert>
+              )}
+
+              {/* Avertissement membre avec accès */}
+              {suggestedMember && !showLinkSuggestion && !suggestedMember.isAdmin && (
+                <Alert status="warning">
+                  <AlertIcon />
+                  <Box>
+                    <Text fontWeight="bold">Membre existant détecté !</Text>
+                    <Text fontSize="sm">
+                      Un membre avec ces informations existe déjà : {suggestedMember.firstName} {suggestedMember.lastName} ({suggestedMember.email})
+                    </Text>
+                    <Text fontSize="sm" color="orange.600">
+                      Matricule : {suggestedMember.matricule} - Accès déjà activé
+                    </Text>
                   </Box>
                 </Alert>
               )}
@@ -493,10 +626,14 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                           <Input
                             value={formData.matricule}
                             onChange={(e) => setFormData(prev => ({ ...prev, matricule: e.target.value }))}
-                            placeholder="j.dupont"
+                            placeholder="w.belaidi"
+                            isReadOnly={suggestedMember?.isAdmin}
                           />
                           <Text fontSize="xs" color="gray.500">
-                            Format: première lettre du prénom + point + nom (lettres minuscules uniquement)
+                            {suggestedMember?.isAdmin ? 
+                              'Matricule admin importé automatiquement' :
+                              'Format: première lettre du prénom + point + nom (lettres minuscules)'
+                            }
                           </Text>
                         </FormControl>
 
@@ -574,9 +711,11 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                 colorScheme="blue"
                 onClick={handleSubmit}
                 isLoading={loading}
-                loadingText={suggestedMember ? "Rattachement..." : "Création..."}
+                loadingText={suggestedMember?.isAdmin ? "Création profil..." : 
+                            suggestedMember ? "Rattachement..." : "Création..."}
               >
-                {suggestedMember && showLinkSuggestion ? 'Rattacher' : 'Créer l\'adhérent'}
+                {suggestedMember?.isAdmin ? 'Créer profil adhérent' :
+                 suggestedMember && showLinkSuggestion ? 'Rattacher' : 'Créer l\'adhérent'}
               </Button>
             </HStack>
           )}
