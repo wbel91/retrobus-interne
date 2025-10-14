@@ -74,12 +74,11 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
       
       if (response.ok) {
         const data = await response.json();
-        // L'API retourne { members: [...], pagination: {...} }
         setExistingMembers(data.members || []);
       }
     } catch (error) {
       console.error('Erreur chargement membres existants:', error);
-      setExistingMembers([]); // Fallback sur tableau vide
+      setExistingMembers([]);
     }
   };
 
@@ -89,24 +88,98 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
     }
   }, [isOpen]);
 
-  // Détecter les membres similaires
+  // Rechercher des membres similaires quand les champs changent
   useEffect(() => {
-    if (formData.firstName && formData.lastName && formData.email && Array.isArray(existingMembers)) {
-      const similar = existingMembers.find(member => 
-        (member.email.toLowerCase() === formData.email.toLowerCase()) ||
-        (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
-         member.lastName.toLowerCase() === formData.lastName.toLowerCase())
-      );
-      
-      if (similar && !similar.matricule) {
-        setSuggestedMember(similar);
-        setShowLinkSuggestion(true);
-      } else {
-        setSuggestedMember(null);
-        setShowLinkSuggestion(false);
+    const searchSimilar = async () => {
+      if (formData.firstName && formData.lastName && formData.email) {
+        try {
+          const params = new URLSearchParams({
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email
+          });
+
+          const response = await fetch(`${API_BASE_URL}/api/members/search-similar?${params}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log('🔍 Membres similaires trouvés:', data.members);
+            
+            const similar = data.members.find(member => 
+              (member.email.toLowerCase() === formData.email.toLowerCase()) ||
+              (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
+               member.lastName.toLowerCase() === formData.lastName.toLowerCase())
+            );
+
+            if (similar && (!similar.loginEnabled || similar.loginEnabled === false)) {
+              console.log('✅ Proposition de fusion pour:', similar);
+              setSuggestedMember(similar);
+              setShowLinkSuggestion(true);
+            } else if (similar && similar.loginEnabled) {
+              console.log('⚠️ Membre avec accès déjà activé:', similar);
+              setSuggestedMember(null);
+              setShowLinkSuggestion(false);
+            } else {
+              setSuggestedMember(null);
+              setShowLinkSuggestion(false);
+            }
+          }
+        } catch (error) {
+          console.error('Erreur recherche membres similaires:', error);
+          // Fallback sur l'ancienne méthode
+          if (Array.isArray(existingMembers)) {
+            const similar = existingMembers.find(member => 
+              (member.email.toLowerCase() === formData.email.toLowerCase()) ||
+              (member.firstName.toLowerCase() === formData.firstName.toLowerCase() && 
+               member.lastName.toLowerCase() === formData.lastName.toLowerCase())
+            );
+            
+            if (similar && (!similar.loginEnabled || similar.loginEnabled === false)) {
+              setSuggestedMember(similar);
+              setShowLinkSuggestion(true);
+            } else {
+              setSuggestedMember(null);
+              setShowLinkSuggestion(false);
+            }
+          }
+        }
       }
-    }
+    };
+
+    // Délai pour éviter trop de requêtes
+    const timer = setTimeout(searchSimilar, 500);
+    return () => clearTimeout(timer);
   }, [formData.firstName, formData.lastName, formData.email, existingMembers]);
+
+  // Auto-générer le matricule basé sur prénom.nom
+  useEffect(() => {
+    if (formData.firstName && formData.lastName) {
+      const matricule = `${formData.firstName.toLowerCase().charAt(0)}.${formData.lastName.toLowerCase().replace(/[^a-z]/g, '')}`;
+      setFormData(prev => ({ ...prev, matricule }));
+    }
+  }, [formData.firstName, formData.lastName]);
+
+  const linkExistingMember = () => {
+    if (suggestedMember) {
+      setFormData(prev => ({
+        ...prev,
+        firstName: suggestedMember.firstName,
+        lastName: suggestedMember.lastName,
+        email: suggestedMember.email,
+        phone: suggestedMember.phone || '',
+        address: suggestedMember.address || '',
+        city: suggestedMember.city || '',
+        postalCode: suggestedMember.postalCode || '',
+        birthDate: suggestedMember.birthDate || '',
+        membershipType: suggestedMember.membershipType,
+        membershipStatus: suggestedMember.membershipStatus
+      }));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -200,59 +273,6 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
     setSuggestedMember(null);
     setShowLinkSuggestion(false);
     onClose();
-  };
-
-  const generateMatricule = () => {
-    if (!formData.firstName || !formData.lastName) {
-      toast({
-        status: 'warning',
-        title: 'Information manquante',
-        description: 'Veuillez d\'abord saisir le prénom et le nom'
-      });
-      return;
-    }
-
-    const firstName = formData.firstName.trim().toLowerCase();
-    const lastName = formData.lastName.trim().toLowerCase()
-      .replace(/\s+/g, '')
-      .replace(/[^a-z]/g, '');
-
-    if (firstName.length === 0 || lastName.length === 0) {
-      toast({
-        status: 'error',
-        title: 'Erreur',
-        description: 'Prénom et nom invalides'
-      });
-      return;
-    }
-
-    const matricule = `${firstName.charAt(0)}.${lastName}`;
-    setFormData(prev => ({ ...prev, matricule }));
-  };
-
-  // Auto-générer le matricule quand prénom et nom changent
-  React.useEffect(() => {
-    if (formData.firstName && formData.lastName && !formData.matricule) {
-      generateMatricule();
-    }
-  }, [formData.firstName, formData.lastName]);
-
-  const linkExistingMember = () => {
-    if (suggestedMember) {
-      setFormData(prev => ({
-        ...prev,
-        firstName: suggestedMember.firstName,
-        lastName: suggestedMember.lastName,
-        email: suggestedMember.email,
-        phone: suggestedMember.phone || '',
-        address: suggestedMember.address || '',
-        city: suggestedMember.city || '',
-        postalCode: suggestedMember.postalCode || '',
-        birthDate: suggestedMember.birthDate || '',
-        membershipType: suggestedMember.membershipType,
-        membershipStatus: suggestedMember.membershipStatus
-      }));
-    }
   };
 
   return (
@@ -363,7 +383,17 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                             />
                           </FormControl>
                         </SimpleGrid>
+                      </VStack>
+                    </CardBody>
+                  </Card>
 
+                  {/* Adresse */}
+                  <Card w="full">
+                    <CardHeader>
+                      <Heading size="sm">Adresse</Heading>
+                    </CardHeader>
+                    <CardBody>
+                      <VStack spacing={4}>
                         <FormControl>
                           <FormLabel>Adresse</FormLabel>
                           <Input
@@ -371,20 +401,19 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                             onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
                           />
                         </FormControl>
-
                         <SimpleGrid columns={2} spacing={4} width="100%">
-                          <FormControl>
-                            <FormLabel>Ville</FormLabel>
-                            <Input
-                              value={formData.city}
-                              onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                            />
-                          </FormControl>
                           <FormControl>
                             <FormLabel>Code postal</FormLabel>
                             <Input
                               value={formData.postalCode}
                               onChange={(e) => setFormData(prev => ({ ...prev, postalCode: e.target.value }))}
+                            />
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Ville</FormLabel>
+                            <Input
+                              value={formData.city}
+                              onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                             />
                           </FormControl>
                         </SimpleGrid>
@@ -407,47 +436,28 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                               onChange={(e) => setFormData(prev => ({ ...prev, membershipType: e.target.value }))}
                             >
                               {Object.entries(MEMBERSHIP_TYPES).map(([key, type]) => (
-                                <option key={key} value={key}>
-                                  {type.label}
-                                </option>
+                                <option key={key} value={key}>{type.label}</option>
                               ))}
                             </Select>
                           </FormControl>
                           <FormControl>
-                            <FormLabel>Statut d'adhésion</FormLabel>
+                            <FormLabel>Statut</FormLabel>
                             <Select
                               value={formData.membershipStatus}
                               onChange={(e) => setFormData(prev => ({ ...prev, membershipStatus: e.target.value }))}
                             >
-                              {Object.entries(MEMBERSHIP_STATUS).map(([key, label]) => (
-                                <option key={key} value={key}>
-                                  {label}
-                                </option>
+                              {Object.entries(MEMBERSHIP_STATUS).map(([key, status]) => (
+                                <option key={key} value={key}>{status}</option>
                               ))}
                             </Select>
                           </FormControl>
                         </SimpleGrid>
-
-                        <FormControl>
-                          <FormLabel>Rôle dans l'association</FormLabel>
-                          <Select
-                            value={formData.role}
-                            onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
-                          >
-                            {Object.entries(MEMBER_ROLES).map(([key, role]) => (
-                              <option key={key} value={key}>
-                                {role.label} - {role.description}
-                              </option>
-                            ))}
-                          </Select>
-                        </FormControl>
 
                         <SimpleGrid columns={2} spacing={4} width="100%">
                           <FormControl>
                             <FormLabel>Montant cotisation (€)</FormLabel>
                             <Input
                               type="number"
-                              step="0.01"
                               value={formData.paymentAmount}
                               onChange={(e) => setFormData(prev => ({ ...prev, paymentAmount: e.target.value }))}
                             />
@@ -461,7 +471,7 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                               <option value="CASH">Espèces</option>
                               <option value="CHECK">Chèque</option>
                               <option value="BANK_TRANSFER">Virement</option>
-                              <option value="CARD">Carte bancaire</option>
+                              <option value="CARD">Carte</option>
                               <option value="PAYPAL">PayPal</option>
                               <option value="HELLOASSO">HelloAsso</option>
                             </Select>
@@ -480,57 +490,72 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
                       <VStack spacing={4}>
                         <FormControl isRequired>
                           <FormLabel>Matricule de connexion</FormLabel>
-                          <HStack>
-                            <Input
-                              placeholder="j.dupont"
-                              value={formData.matricule}
-                              onChange={(e) => setFormData(prev => ({ ...prev, matricule: e.target.value }))}
-                            />
-                            <Button size="md" onClick={generateMatricule} colorScheme="gray">
-                              Générer
-                            </Button>
-                          </HStack>
+                          <Input
+                            value={formData.matricule}
+                            onChange={(e) => setFormData(prev => ({ ...prev, matricule: e.target.value }))}
+                            placeholder="j.dupont"
+                          />
                           <Text fontSize="xs" color="gray.500">
-                            Format : première lettre du prénom + point + nom de famille
+                            Format: première lettre du prénom + point + nom (lettres minuscules uniquement)
                           </Text>
                         </FormControl>
 
-                        <SimpleGrid columns={1} spacing={4} width="100%">
-                          <HStack justify="space-between">
-                            <FormLabel mb={0}>Accès intranet</FormLabel>
+                        <FormControl>
+                          <FormLabel>Rôle</FormLabel>
+                          <Select
+                            value={formData.role}
+                            onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                          >
+                            {Object.entries(MEMBER_ROLES).map(([key, role]) => (
+                              <option key={key} value={key}>{role.label}</option>
+                            ))}
+                          </Select>
+                        </FormControl>
+
+                        <SimpleGrid columns={2} spacing={4} width="100%">
+                          <Box>
+                            <Text fontSize="sm" fontWeight="medium" mb={2}>Accès interne</Text>
                             <Switch
                               isChecked={formData.hasInternalAccess}
                               onChange={(e) => setFormData(prev => ({ ...prev, hasInternalAccess: e.target.checked }))}
                             />
-                          </HStack>
-                          <HStack justify="space-between">
-                            <FormLabel mb={0}>Accès site externe</FormLabel>
+                          </Box>
+                          <Box>
+                            <Text fontSize="sm" fontWeight="medium" mb={2}>Accès externe</Text>
                             <Switch
                               isChecked={formData.hasExternalAccess}
                               onChange={(e) => setFormData(prev => ({ ...prev, hasExternalAccess: e.target.checked }))}
                             />
-                          </HStack>
-                          <HStack justify="space-between">
-                            <FormLabel mb={0}>Newsletter</FormLabel>
-                            <Switch
-                              isChecked={formData.newsletter}
-                              onChange={(e) => setFormData(prev => ({ ...prev, newsletter: e.target.checked }))}
-                            />
-                          </HStack>
+                          </Box>
                         </SimpleGrid>
+
+                        <Box w="full">
+                          <Text fontSize="sm" fontWeight="medium" mb={2}>Newsletter</Text>
+                          <Switch
+                            isChecked={formData.newsletter}
+                            onChange={(e) => setFormData(prev => ({ ...prev, newsletter: e.target.checked }))}
+                          />
+                        </Box>
                       </VStack>
                     </CardBody>
                   </Card>
 
                   {/* Notes */}
-                  <FormControl>
-                    <FormLabel>Notes</FormLabel>
-                    <Textarea
-                      value={formData.notes}
-                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Notes internes sur l'adhérent..."
-                    />
-                  </FormControl>
+                  <Card w="full">
+                    <CardHeader>
+                      <Heading size="sm">Notes</Heading>
+                    </CardHeader>
+                    <CardBody>
+                      <FormControl>
+                        <FormLabel>Notes administratives</FormLabel>
+                        <Textarea
+                          value={formData.notes}
+                          onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="Notes internes sur l'adhérent..."
+                        />
+                      </FormControl>
+                    </CardBody>
+                  </Card>
                 </VStack>
               </form>
             </VStack>
@@ -539,20 +564,19 @@ export default function CreateMemberWithLogin({ isOpen, onClose, onMemberCreated
 
         <ModalFooter>
           {result ? (
-            <Button colorScheme="blue" onClick={handleClose}>
-              Fermer
-            </Button>
+            <Button onClick={handleClose}>Fermer</Button>
           ) : (
-            <HStack>
+            <HStack spacing={3}>
               <Button variant="ghost" onClick={handleClose}>
                 Annuler
               </Button>
               <Button
                 colorScheme="blue"
-                isLoading={loading}
                 onClick={handleSubmit}
+                isLoading={loading}
+                loadingText={suggestedMember ? "Rattachement..." : "Création..."}
               >
-                {suggestedMember && showLinkSuggestion ? 'Rattacher l\'adhérent' : 'Créer l\'adhérent'}
+                {suggestedMember && showLinkSuggestion ? 'Rattacher' : 'Créer l\'adhérent'}
               </Button>
             </HStack>
           )}

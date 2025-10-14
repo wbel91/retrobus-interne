@@ -5,11 +5,11 @@ import {
   Table, Thead, Tbody, Tr, Th, Td, Spinner, Center, Alert,
   AlertIcon, Divider, Progress, useToast, Modal, ModalOverlay,
   ModalContent, ModalHeader, ModalBody, ModalFooter, FormControl,
-  FormLabel, Input, useDisclosure
+  FormLabel, Input, useDisclosure, Textarea, Switch
 } from '@chakra-ui/react';
 import { 
   FiUser, FiCreditCard, FiCalendar, FiMail, FiPhone, 
-  FiMapPin, FiKey, FiEdit, FiDownload 
+  FiMapPin, FiKey, FiEdit, FiDownload, FiSave, FiX 
 } from 'react-icons/fi';
 import { useUser } from '../context/UserContext';
 
@@ -43,6 +43,8 @@ export default function MyMembership() {
   const { user } = useUser();
   const [memberData, setMemberData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState({});
   const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const { isOpen: isPasswordModalOpen, onOpen: onPasswordModalOpen, onClose: onPasswordModalClose } = useDisclosure();
   const toast = useToast();
@@ -54,7 +56,7 @@ export default function MyMembership() {
   const fetchMemberData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/me`, {
+      const response = await fetch(`${API_BASE_URL}/api/members/me`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -62,23 +64,12 @@ export default function MyMembership() {
       
       if (!response.ok) throw new Error('Erreur de chargement');
       
-      const userData = await response.json();
-      
-      // Si c'est un membre connecté, récupérer ses données complètes
-      if (userData.id) {
-        const memberResponse = await fetch(`${API_BASE_URL}/members/${userData.id}`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        
-        if (memberResponse.ok) {
-          const memberInfo = await memberResponse.json();
-          setMemberData(memberInfo);
-        }
-      }
+      const memberInfo = await response.json();
+      setMemberData(memberInfo);
+      setEditData(memberInfo);
       
     } catch (error) {
+      console.error('Erreur chargement:', error);
       toast({
         status: 'error',
         title: 'Erreur',
@@ -87,6 +78,51 @@ export default function MyMembership() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditProfile = () => {
+    setEditMode(true);
+    setEditData({ ...memberData });
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/members/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(editData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erreur de mise à jour');
+      }
+
+      const updatedData = await response.json();
+      setMemberData(updatedData);
+      setEditMode(false);
+      
+      toast({
+        status: 'success',
+        title: 'Profil mis à jour',
+        description: 'Vos informations ont été sauvegardées'
+      });
+      
+    } catch (error) {
+      toast({
+        status: 'error',
+        title: 'Erreur',
+        description: error.message
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    setEditData({ ...memberData });
   };
 
   const handlePasswordChange = async () => {
@@ -99,8 +135,17 @@ export default function MyMembership() {
       return;
     }
 
+    if (passwordData.newPassword.length < 6) {
+      toast({
+        status: 'error',
+        title: 'Erreur',
+        description: 'Le mot de passe doit faire au moins 6 caractères'
+      });
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      const response = await fetch(`${API_BASE_URL}/api/members/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,7 +157,10 @@ export default function MyMembership() {
         })
       });
 
-      if (!response.ok) throw new Error('Erreur de changement de mot de passe');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erreur de changement de mot de passe');
+      }
 
       toast({
         status: 'success',
@@ -168,10 +216,27 @@ export default function MyMembership() {
     <Box p={6}>
       <VStack align="stretch" spacing={6}>
         {/* Header */}
-        <Heading size="lg" display="flex" alignItems="center">
-          <FiUser style={{ marginRight: '8px' }} />
-          Mon Adhésion
-        </Heading>
+        <HStack justify="space-between">
+          <Heading size="lg" display="flex" alignItems="center">
+            <FiUser style={{ marginRight: '8px' }} />
+            Mon Adhésion
+          </Heading>
+          
+          {editMode ? (
+            <HStack>
+              <Button leftIcon={<FiSave />} colorScheme="green" onClick={handleSaveProfile}>
+                Sauvegarder
+              </Button>
+              <Button leftIcon={<FiX />} variant="outline" onClick={handleCancelEdit}>
+                Annuler
+              </Button>
+            </HStack>
+          ) : (
+            <Button leftIcon={<FiEdit />} onClick={handleEditProfile}>
+              Modifier
+            </Button>
+          )}
+        </HStack>
 
         {/* Alerte si mot de passe à changer */}
         {memberData.mustChangePassword && (
@@ -241,55 +306,138 @@ export default function MyMembership() {
             </CardHeader>
             <CardBody>
               <VStack align="stretch" spacing={4}>
-                <HStack>
-                  <FiUser />
-                  <Box>
-                    <Text fontSize="sm" color="gray.600">Nom complet</Text>
-                    <Text fontWeight="bold">{memberData.firstName} {memberData.lastName}</Text>
-                  </Box>
-                </HStack>
-                
-                <HStack>
-                  <FiMail />
-                  <Box>
-                    <Text fontSize="sm" color="gray.600">Email</Text>
-                    <Text fontWeight="bold">{memberData.email}</Text>
-                  </Box>
-                </HStack>
-                
-                {memberData.phone && (
-                  <HStack>
-                    <FiPhone />
-                    <Box>
-                      <Text fontSize="sm" color="gray.600">Téléphone</Text>
-                      <Text fontWeight="bold">{memberData.phone}</Text>
-                    </Box>
-                  </HStack>
-                )}
-                
-                {(memberData.address || memberData.city) && (
-                  <HStack>
-                    <FiMapPin />
-                    <Box>
-                      <Text fontSize="sm" color="gray.600">Adresse</Text>
-                      <Text fontWeight="bold">
-                        {memberData.address && `${memberData.address}, `}
-                        {memberData.postalCode} {memberData.city}
-                      </Text>
-                    </Box>
-                  </HStack>
-                )}
-                
-                {memberData.birthDate && (
-                  <HStack>
-                    <FiCalendar />
-                    <Box>
-                      <Text fontSize="sm" color="gray.600">Date de naissance</Text>
-                      <Text fontWeight="bold">
-                        {new Date(memberData.birthDate).toLocaleDateString('fr-FR')}
-                      </Text>
-                    </Box>
-                  </HStack>
+                {editMode ? (
+                  <>
+                    <FormControl>
+                      <FormLabel>Prénom</FormLabel>
+                      <Input
+                        value={editData.firstName || ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, firstName: e.target.value }))}
+                      />
+                    </FormControl>
+                    
+                    <FormControl>
+                      <FormLabel>Nom</FormLabel>
+                      <Input
+                        value={editData.lastName || ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, lastName: e.target.value }))}
+                      />
+                    </FormControl>
+                    
+                    <FormControl>
+                      <FormLabel>Email</FormLabel>
+                      <Input
+                        type="email"
+                        value={editData.email || ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, email: e.target.value }))}
+                      />
+                    </FormControl>
+                    
+                    <FormControl>
+                      <FormLabel>Téléphone</FormLabel>
+                      <Input
+                        value={editData.phone || ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, phone: e.target.value }))}
+                      />
+                    </FormControl>
+                    
+                    <FormControl>
+                      <FormLabel>Adresse</FormLabel>
+                      <Input
+                        value={editData.address || ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, address: e.target.value }))}
+                      />
+                    </FormControl>
+                    
+                    <SimpleGrid columns={2} spacing={4}>
+                      <FormControl>
+                        <FormLabel>Code postal</FormLabel>
+                        <Input
+                          value={editData.postalCode || ''}
+                          onChange={(e) => setEditData(prev => ({ ...prev, postalCode: e.target.value }))}
+                        />
+                      </FormControl>
+                      
+                      <FormControl>
+                        <FormLabel>Ville</FormLabel>
+                        <Input
+                          value={editData.city || ''}
+                          onChange={(e) => setEditData(prev => ({ ...prev, city: e.target.value }))}
+                        />
+                      </FormControl>
+                    </SimpleGrid>
+                    
+                    <FormControl>
+                      <FormLabel>Date de naissance</FormLabel>
+                      <Input
+                        type="date"
+                        value={editData.birthDate ? editData.birthDate.split('T')[0] : ''}
+                        onChange={(e) => setEditData(prev => ({ ...prev, birthDate: e.target.value }))}
+                      />
+                    </FormControl>
+
+                    <FormControl display="flex" alignItems="center">
+                      <FormLabel htmlFor="newsletter" mb="0">Newsletter</FormLabel>
+                      <Switch
+                        id="newsletter"
+                        isChecked={editData.newsletter}
+                        onChange={(e) => setEditData(prev => ({ ...prev, newsletter: e.target.checked }))}
+                      />
+                    </FormControl>
+                  </>
+                ) : (
+                  <>
+                    <HStack>
+                      <FiUser />
+                      <Box>
+                        <Text fontSize="sm" color="gray.600">Nom complet</Text>
+                        <Text fontWeight="bold">{memberData.firstName} {memberData.lastName}</Text>
+                      </Box>
+                    </HStack>
+                    
+                    <HStack>
+                      <FiMail />
+                      <Box>
+                        <Text fontSize="sm" color="gray.600">Email</Text>
+                        <Text fontWeight="bold">{memberData.email}</Text>
+                      </Box>
+                    </HStack>
+                    
+                    {memberData.phone && (
+                      <HStack>
+                        <FiPhone />
+                        <Box>
+                          <Text fontSize="sm" color="gray.600">Téléphone</Text>
+                          <Text fontWeight="bold">{memberData.phone}</Text>
+                        </Box>
+                      </HStack>
+                    )}
+                    
+                    {(memberData.address || memberData.city) && (
+                      <HStack>
+                        <FiMapPin />
+                        <Box>
+                          <Text fontSize="sm" color="gray.600">Adresse</Text>
+                          <Text fontWeight="bold">
+                            {memberData.address && `${memberData.address}, `}
+                            {memberData.postalCode} {memberData.city}
+                          </Text>
+                        </Box>
+                      </HStack>
+                    )}
+                    
+                    {memberData.birthDate && (
+                      <HStack>
+                        <FiCalendar />
+                        <Box>
+                          <Text fontSize="sm" color="gray.600">Date de naissance</Text>
+                          <Text fontWeight="bold">
+                            {new Date(memberData.birthDate).toLocaleDateString('fr-FR')}
+                          </Text>
+                        </Box>
+                      </HStack>
+                    )}
+                  </>
                 )}
               </VStack>
             </CardBody>
@@ -317,13 +465,13 @@ export default function MyMembership() {
                   </Box>
                 </HStack>
                 
-                {memberData.joinDate && (
+                {memberData.createdAt && (
                   <HStack>
                     <FiCalendar />
                     <Box>
                       <Text fontSize="sm" color="gray.600">Date d'adhésion</Text>
                       <Text fontWeight="bold">
-                        {new Date(memberData.joinDate).toLocaleDateString('fr-FR')}
+                        {new Date(memberData.createdAt).toLocaleDateString('fr-FR')}
                       </Text>
                     </Box>
                   </HStack>
@@ -348,24 +496,23 @@ export default function MyMembership() {
         </SimpleGrid>
 
         {/* Actions */}
-        <Card>
-          <CardHeader>
-            <Heading size="md">Actions</Heading>
-          </CardHeader>
-          <CardBody>
-            <HStack spacing={4} wrap="wrap">
-              <Button leftIcon={<FiKey />} onClick={onPasswordModalOpen}>
-                Changer le mot de passe
-              </Button>
-              <Button leftIcon={<FiEdit />} variant="outline">
-                Modifier mes informations
-              </Button>
-              <Button leftIcon={<FiDownload />} variant="outline">
-                Télécharger ma carte d'adhérent
-              </Button>
-            </HStack>
-          </CardBody>
-        </Card>
+        {!editMode && (
+          <Card>
+            <CardHeader>
+              <Heading size="md">Actions</Heading>
+            </CardHeader>
+            <CardBody>
+              <HStack spacing={4} wrap="wrap">
+                <Button leftIcon={<FiKey />} onClick={onPasswordModalOpen}>
+                  Changer le mot de passe
+                </Button>
+                <Button leftIcon={<FiDownload />} variant="outline">
+                  Télécharger ma carte d'adhérent
+                </Button>
+              </HStack>
+            </CardBody>
+          </Card>
+        )}
 
         {/* Notes admin si présentes */}
         {memberData.notes && (

@@ -245,6 +245,8 @@ const Members = () => {
   };
 
   const handleEdit = async (member) => {
+    console.log('🔧 Tentative d\'édition du membre:', member);
+    
     setEditingMember(member);
     setFormData({
       firstName: member.firstName || '',
@@ -278,9 +280,19 @@ const Members = () => {
       poste: member.poste || ''
     });
     
-    // Charger les documents du membre
-    await fetchMemberDocuments(member.id);
+    // CORRECTION: S'assurer que la modale s'ouvre
+    console.log('🔓 Ouverture de la modale d\'édition');
     onOpen();
+    
+    // Charger les documents du membre si c'est une édition
+    if (member.id) {
+      try {
+        await fetchMemberDocuments(member.id);
+        console.log('📄 Documents du membre chargés');
+      } catch (error) {
+        console.error('❌ Erreur chargement documents:', error);
+      }
+    }
   };
 
   const handleSave = async () => {
@@ -933,8 +945,8 @@ const Members = () => {
                             value={formData.role}
                             onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
                           >
-                            {Object.entries(MEMBER_ROLES).map(([key, config]) => (
-                              <option key={key} value={key}>{config.label}</option>
+                            {Object.entries(MEMBER_ROLES).map(([key, label]) => (
+                              <option key={key} value={key}>{label}</option>
                             ))}
                           </Select>
                         </FormControl>

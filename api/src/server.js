@@ -1630,6 +1630,56 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
   }
 });
 
+// Route pour rechercher des membres similaires (pour détection de doublons/fusion)
+app.get('/api/members/search-similar', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+
+  try {
+    const { firstName, lastName, email } = req.query;
+
+    if (!firstName && !lastName && !email) {
+      return res.status(400).json({ error: 'Au moins un critère de recherche requis' });
+    }
+
+    let whereCondition = {
+      OR: []
+    };
+
+    if (email) {
+      whereCondition.OR.push({ email: { contains: email, mode: 'insensitive' } });
+    }
+
+    if (firstName && lastName) {
+      whereCondition.OR.push({
+        AND: [
+          { firstName: { contains: firstName, mode: 'insensitive' } },
+          { lastName: { contains: lastName, mode: 'insensitive' } }
+        ]
+      });
+    }
+
+    const similarMembers = await prisma.member.findMany({
+      where: whereCondition,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        matricule: true,
+        loginEnabled: true,
+        membershipStatus: true,
+        createdAt: true
+      }
+    });
+
+    res.json({ members: similarMembers });
+
+  } catch (error) {
+    console.error('Error searching similar members:', error);
+    res.status(500).json({ error: 'Erreur lors de la recherche de membres similaires' });
+  }
+});
+
 // ---------- Start server ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
