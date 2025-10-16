@@ -8,6 +8,7 @@ export { documentsAPI } from './documents.js';
 export { newsletterAPI } from './newsletter.js';
 export { myRBEAPI } from './myrbe.js';
 export { flashAPI } from './flash.js';
+export { stocksAPI } from './stocks.js';
 
 // Import des API pour l'export par défaut
 import { authAPI } from './auth.js';
@@ -18,6 +19,15 @@ import { documentsAPI } from './documents.js';
 import { newsletterAPI } from './newsletter.js';
 import { myRBEAPI } from './myrbe.js';
 import { flashAPI } from './flash.js';
+import { stocksAPI } from './stocks.js';
+
+// Alias pour compatibility
+export const api = {
+  get: (url, options) => apiClient.get(url, options),
+  post: (url, data, options) => apiClient.post(url, data, options),
+  put: (url, data, options) => apiClient.put(url, data, options),
+  delete: (url, options) => apiClient.delete(url, options),
+};
 
 // Export par défaut de toutes les API
 export default {
@@ -28,5 +38,6 @@ export default {
   documents: documentsAPI,
   newsletter: newsletterAPI,
   myrbe: myRBEAPI,
-  flash: flashAPI
+  flash: flashAPI,
+  stocks: stocksAPI
 };
