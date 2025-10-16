@@ -543,8 +543,8 @@ app.put('/vehicles/:parc', requireAuth, async (req, res) => {
       type: 'type',
       energie: 'energie',
       description: 'description',
-      history: 'history',   // accepte “history” (front)
-      histoire: 'history'   // accepte aussi “histoire” (FR)
+      history: 'history',   // accepte « history » (front)
+      histoire: 'history'   // et « histoire » (FR)
     };
 
     const dataUpdate = {};
@@ -623,9 +623,7 @@ app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 1
     const existing = Array.isArray(existingGallery) ? existingGallery : [];
 
     const files = req.files || [];
-    if (files.length === 0) {
-      return res.status(400).json({ error: 'Aucun fichier reçu' });
-    }
+    if (files.length === 0) return res.status(400).json({ error: 'Aucun fichier reçu' });
 
     const added = files.map(file => {
       const base64 = file.buffer.toString('base64');
@@ -1154,10 +1152,7 @@ app.get('/api/stocks', requireAuth, async (req, res) => {
       ];
     }
 
-    const rows = await prisma.stock.findMany({
-      where,
-      orderBy: { name: 'asc' }
-    });
+    const rows = await prisma.stock.findMany({ where, orderBy: { name: 'asc' } });
 
     const filtered = (String(lowStock) === 'true')
       ? rows.filter(r => (r.quantity ?? 0) <= (r.minQuantity ?? 0))
@@ -1166,7 +1161,7 @@ app.get('/api/stocks', requireAuth, async (req, res) => {
     res.json({ stocks: filtered.map(transformStock) });
   } catch (e) {
     console.error('stocks list error:', e);
-    res.json({ stocks: [] }); // ne pas casser le front
+    res.json({ stocks: [] });
   }
 });
 
@@ -1174,12 +1169,11 @@ app.get('/api/stocks', requireAuth, async (req, res) => {
 app.get('/api/stocks/stats', requireAuth, async (_req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const [totalItems, totalQuantity] = await Promise.all([
+    const [totalItems, agg] = await Promise.all([
       prisma.stock.count(),
       prisma.stock.aggregate({ _sum: { quantity: true } })
     ]);
 
-    // lowStock and outOfStock: faire simple en JS pour compat large
     const all = await prisma.stock.findMany({ select: { quantity: true, minQuantity: true } });
     let lowStockCount = 0;
     let outOfStockCount = 0;
@@ -1190,18 +1184,13 @@ app.get('/api/stocks/stats', requireAuth, async (_req, res) => {
 
     res.json({
       totalItems,
-      totalQuantity: totalQuantity?._sum?.quantity || 0,
+      totalQuantity: agg?._sum?.quantity || 0,
       lowStockCount,
       outOfStockCount
     });
   } catch (e) {
     console.error('stocks/stats error:', e);
-    res.json({
-      totalItems: 0,
-      totalQuantity: 0,
-      lowStockCount: 0,
-      outOfStockCount: 0
-    });
+    res.json({ totalItems: 0, totalQuantity: 0, lowStockCount: 0, outOfStockCount: 0 });
   }
 });
 
@@ -1733,208 +1722,40 @@ app.get('/api/events/:id/helloasso/participants', requireAuth, async (req, res) 
   }
 });
 
-// ---------- Stocks API (prefix /api) ----------
-// Remplacer la fonction transformStock existante par celle-ci:
-const transformStock = (s) => ({
-  id: s.id,
-  reference: s.reference,
-  name: s.name,
-  description: s.description,
-  category: s.category,
-  subcategory: s.subcategory,
-  quantity: s.quantity,
-  minQuantity: s.minQuantity,
-  unit: s.unit,
-  location: s.location,
-  supplier: s.supplier,
-  purchasePrice: s.purchasePrice,
-  salePrice: s.salePrice,
-  status: s.status,
-  lastRestockDate: s.lastRestockDate,
-  expiryDate: s.expiryDate,
-  notes: s.notes,
-  createdBy: s.createdBy,
-  createdAt: s.createdAt,
-  updatedAt: s.updatedAt
-});
+// ---------- Retromail (public) ----------
+const RETROMAIL_DIR = path.join(process.cwd(), 'retromail');
 
-// ---------- Stocks (private) ----------
-app.get('/api/stocks', authenticateToken, async (req, res) => {
-  if (!ensureDB(res)) return;
+// Middleware pour créer le dossier Retromail s'il n'existe pas
+app.use(async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, sort = 'name', category, status } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-
-    const where = {};
-    if (search) {
-      const s = String(search).trim();
-      where.OR = [
-        { name: { contains: s, mode: 'insensitive' } },
-        { reference: { contains: s, mode: 'insensitive' } },
-        { description: { contains: s, mode: 'insensitive' } }
-      ];
-    }
-    if (category && category !== 'ALL') {
-      where.category = category;
-    }
-    if (status && status !== 'ALL') {
-      where.status = status;
-    }
-
-    const orderBy = {};
-    if (sort === 'name') orderBy.name = 'asc';
-    else if (sort === 'reference') orderBy.reference = 'asc';
-    else orderBy.createdAt = 'desc';
-
-    const [stocks, total] = await Promise.all([
-      prisma.stock.findMany({
-        where,
-        orderBy,
-        skip: offset,
-        take: parseInt(limit),
-        select: {
-          id: true,
-          reference: true,
-          name: true,
-          description: true,
-          category: true,
-          subcategory: true,
-          quantity: true,
-          minQuantity: true,
-          unit: true,
-          location: true,
-          supplier: true,
-          purchasePrice: true,
-          salePrice: true,
-          status: true,
-          lastRestockDate: true,
-          expiryDate: true,
-          notes: true,
-          createdBy: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      }),
-      prisma.stock.count({ where })
-    ]);
-
-    res.json({
-      stocks,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
-    });
+    await fs.mkdir(RETROMAIL_DIR, { recursive: true });
+    next();
   } catch (e) {
-    console.error('Erreur récupération stocks (/api):', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération des stocks' });
+    console.error('Error creating Retromail directory:', e);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-app.post('/api/stocks', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const {
-      reference, name, description, category = 'GENERAL', subcategory,
-      quantity = 0, minQuantity = 0, unit = 'PIECE',
-      location, supplier,
-      purchasePrice, salePrice,
-      status = 'AVAILABLE',
-      lastRestockDate, expiryDate,
-      notes
-    } = req.body || {};
+async function retroMailPublish({ title, summary, body, tags = [], audience = 'ALL', from = 'system', attachments = [] }) {
+  const ts = new Date();
+  const stamp = ts.toISOString().replace(/[-:]/g, '').replace(/\..+/, '');
+  const baseName = `${stamp}-${(title || 'message').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
+  const jsonName = `${baseName}.json`;
 
-    if (!name) return res.status(400).json({ error: 'Nom requis' });
+  const json = { id: baseName, date: ts.toISOString(), title, summary: summary || '', body: body || '', from, tags, audience, attachments };
+  await fs.writeFile(path.join(RETROMAIL_DIR, jsonName), JSON.stringify(json, null, 2), 'utf-8');
+  return { id: baseName, jsonName };
+}
 
-    const created = await prisma.stock.create({
-      data: {
-        reference: reference || null,
-        name,
-        description: description || null,
-        category,
-        subcategory: subcategory || null,
-        quantity: parseInt(quantity) || 0,
-        minQuantity: parseInt(minQuantity) || 0,
-        unit,
-        location: location || null,
-        supplier: supplier || null,
-        purchasePrice: purchasePrice != null ? parseFloat(purchasePrice) : null,
-        salePrice: salePrice != null ? parseFloat(salePrice) : null,
-        status,
-        lastRestockDate: lastRestockDate ? new Date(lastRestockDate) : null,
-        expiryDate: expiryDate ? new Date(expiryDate) : null,
-        notes: notes || null,
-        createdBy: req.user?.username || req.user?.sub || 'system'
-      }
-    });
+async function retroMailSavePdf(buffer, suggestedName) {
+  const safe = (suggestedName || `document-${Date.now()}`).replace(/[^a-z0-9._-]/gi, '_');
+  const pdfName = safe.endsWith('.pdf') ? safe : `${safe}.pdf`;
+  await fs.writeFile(path.join(RETROMAIL_DIR, pdfName), buffer);
+  return { fileName: pdfName, url: `/retromail/${pdfName}` };
+}
 
-    res.status(201).json(transformStock(created));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Create failed' });
-  }
-});
-
-app.put('/api/stocks/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const id = parseInt(req.params.id, 10);
-    const existing = await prisma.stock.findUnique({ where: { id } });
-    if (!existing) return res.status(404).json({ error: 'Stock not found' });
-
-    const {
-      reference, name, description, category, subcategory,
-      quantity, minQuantity, unit,
-      location, supplier,
-      purchasePrice, salePrice,
-      status,
-      lastRestockDate, expiryDate,
-      notes
-    } = req.body || {};
-
-    const updated = await prisma.stock.update({
-      where: { id },
-      data: {
-        reference: reference !== undefined ? (reference || null) : existing.reference,
-        name: name !== undefined ? name : existing.name,
-        description: description !== undefined ? (description || null) : existing.description,
-        category: category !== undefined ? category : existing.category,
-        subcategory: subcategory !== undefined ? (subcategory || null) : existing.subcategory,
-        quantity: quantity !== undefined ? (parseInt(quantity) || 0) : existing.quantity,
-        minQuantity: minQuantity !== undefined ? (parseInt(minQuantity) || 0) : existing.minQuantity,
-        unit: unit !== undefined ? unit : existing.unit,
-        location: location !== undefined ? (location || null) : existing.location,
-        supplier: supplier !== undefined ? (supplier || null) : existing.supplier,
-        purchasePrice: purchasePrice !== undefined ? (purchasePrice != null ? parseFloat(purchasePrice) : null) : existing.purchasePrice,
-        salePrice: salePrice !== undefined ? (salePrice != null ? parseFloat(salePrice) : null) : existing.salePrice,
-        status: status !== undefined ? status : existing.status,
-        lastRestockDate: lastRestockDate !== undefined ? (lastRestockDate ? new Date(lastRestockDate) : null) : existing.lastRestockDate,
-        expiryDate: expiryDate !== undefined ? (expiryDate ? new Date(expiryDate) : null) : existing.expiryDate,
-        notes: notes !== undefined ? (notes || null) : existing.notes
-      }
-    });
-    res.json(transformStock(updated));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Update failed' });
-  }
-});
-
-app.delete('/api/stocks/:id', authenticateToken, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    await prisma.stock.delete({ where: { id } });
-    res.json({ success: true });
-  } catch (e) {
-    console.error('Erreur suppression stock:', e);
-    res.status(500).json({ error: 'Erreur lors de la suppression du stock' });
-  }
-});
-
-// Historique des mouvements d’un article (alias plural + compat avec l’ancien singulier)
+export default app;
+// Historique (plural)
 app.get('/api/stocks/:id/movements', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
@@ -1953,7 +1774,7 @@ app.get('/api/stocks/:id/movements', requireAuth, async (req, res) => {
   }
 });
 
-// Compat: maintenir aussi /api/stocks/:id/movement (GET) si déjà utilisé quelque part
+// Compat GET (singulier)
 app.get('/api/stocks/:id/movement', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
@@ -1965,7 +1786,6 @@ app.get('/api/stocks/:id/movement', requireAuth, async (req, res) => {
       where: { stockId },
       orderBy: { createdAt: 'desc' }
     });
-
     res.json(movements);
   } catch (e) {
     console.error(e);
@@ -1979,28 +1799,21 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
     const stockId = parseInt(req.params.id, 10);
     const { type, quantity, reason, notes } = req.body || {};
 
-    if (!['IN','OUT','ADJUSTMENT'].includes(type)) {
-      return res.status(400).json({ error: 'Type invalide' });
-    }
+    if (!['IN','OUT','ADJUSTMENT'].includes(type)) return res.status(400).json({ error: 'Type invalide' });
     const qty = parseInt(quantity, 10);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      return res.status(400).json({ error: 'Quantité invalide' });
-    }
+    if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Quantité invalide' });
 
     const stock = await prisma.stock.findUnique({ where: { id: stockId } });
     if (!stock) return res.status(404).json({ error: 'Stock not found' });
 
-    // Calculer la nouvelle quantité
     let newQuantity = stock.quantity;
     if (type === 'IN') newQuantity = stock.quantity + qty;
     else if (type === 'OUT') newQuantity = stock.quantity - qty;
-    else if (type === 'ADJUSTMENT') newQuantity = qty; // convention: ADJUSTMENT => quantité absolue
+    else if (type === 'ADJUSTMENT') newQuantity = qty;
 
-    // Identité de l’acteur
     const actorId = req.user?.username || req.user?.sub || 'system';
     const actorDisplay = actorId;
 
-    // Transaction: créer mouvement + update stock
     const result = await prisma.$transaction(async (tx) => {
       const movement = await tx.stockMovement.create({
         data: {
@@ -2019,7 +1832,6 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
         where: { id: stockId },
         data: {
           quantity: newQuantity,
-          // Si entrée, on met à jour lastRestockDate
           lastRestockDate: type === 'IN' ? new Date() : stock.lastRestockDate
         }
       });
@@ -2027,18 +1839,15 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
       return { movement, updatedStock: updated };
     });
 
-    // Infos membre (si connecté comme "member")
+    // Infos membre pour l'email/PDF
     let memberInfo = null;
     if (req.user?.type === 'member' && req.user?.userId) {
       try {
         const m = await prisma.member.findUnique({ where: { id: req.user.userId } });
-        if (m) {
-          memberInfo = { email: m.email, fullName: `${m.firstName} ${m.lastName}`.trim() };
-        }
+        if (m) memberInfo = { email: m.email, fullName: `${m.firstName} ${m.lastName}`.trim() };
       } catch {}
     }
 
-    // Générer PDF + publier RétroMail (+ conserver l’email si souhaité)
     const pdfBuffer = await generateMovementPDF({
       stock,
       movement: result.movement,
@@ -2046,18 +1855,15 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
       member: memberInfo
     });
 
-    // 1) Sauvegarde PDF dans /retromail
     const pdfFile = await retroMailSavePdf(
       pdfBuffer,
       `mouvement-${result.movement.id}-${stock.reference || stock.id}`
     );
 
-    // 2) Publier un message JSON pour tous les membres
     await retroMailPublish({
       title: `Mouvement ${type} – ${stock.name} (${stock.reference || 'n/r'})`,
-      summary: `Mouvement de stock ${type}: ${qty} • nouveau stock: ${result.movement.newQuantity}`,
+      summary: `Mouvement ${type}: ${qty} • après: ${result.movement.newQuantity}`,
       body:
-
         `Article: ${stock.name} (${stock.reference || 'n/r'})\n` +
         `Type: ${type}\n` +
         `Quantité: ${qty}\n` +
@@ -2066,18 +1872,22 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
         `Raison: ${reason || '-'}\n` +
         `Notes: ${notes || '-'}\n` +
         `Par: ${actorDisplay}\n`,
-      tags: ['stock', 'movement'],
+      tags: ['stock','movement'],
       audience: 'ALL',
       from: actorDisplay,
-      attachments: [{ name: path.basename(pdfFile.fileName), url: pdfFile.url }]
+      attachments: [{ name: pdfFile.fileName, url: pdfFile.url }]
     });
 
-    // 3) Envoi email (optionnel) – on garde pour l’instant, mais l’information est bien disponible dans RétroMail    sendMovementEmail({      stock: result.updatedStock,      movement: result.movement,      actor: { display: actorDisplay },      member: memberInfo    }).catch(err => console.error('Erreur envoi email mouvement:', err));
-    res.json({
+    // Email optionnel (existant)
+    sendMovementEmail({
+      stock: result.updatedStock,
       movement: result.movement,
-      stock: transformStock(result.updatedStock)
-    });
-  } catch ( e) {
+      actor: { display: actorDisplay },
+      member: memberInfo
+    }).catch(err => console.error('Erreur envoi email mouvement:', err));
+
+    res.json({ movement: result.movement, stock: transformStock(result.updatedStock) });
+  } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Create movement failed' });
   }
