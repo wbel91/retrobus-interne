@@ -1723,6 +1723,433 @@ app.get('/api/events/:id/helloasso/participants', requireAuth, async (req, res) 
   }
 });
 
+// ---------- Stocks API ----------
+const transformStock = (stock) => {
+  if (!stock) return null;
+  return {
+    id: stock.id,
+    reference: stock.reference,
+    name: stock.name,
+    description: stock.description,
+    category: stock.category,
+    subcategory: stock.subcategory,
+    quantity: stock.quantity,
+    minQuantity: stock.minQuantity,
+    unit: stock.unit,
+    location: stock.location,
+    supplier: stock.supplier,
+    purchasePrice: stock.purchasePrice,
+    salePrice: stock.salePrice,
+    status: stock.status,
+    lastRestockDate: stock.lastRestockDate,
+    expiryDate: stock.expiryDate,
+    barcode: stock.barcode,
+    notes: stock.notes,
+    createdAt: stock.createdAt,
+    updatedAt: stock.updatedAt,
+    createdBy: stock.createdBy
+  };
+};
+
+// GET /api/stocks - Liste tous les stocks
+app.get('/api/stocks', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { 
+      page = 1, 
+      limit = 50, 
+      category, 
+      status, 
+      search, 
+      lowStock = false,
+      sort = 'name' 
+    } = req.query;
+    
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = {};
+    if (category && category !== 'ALL') where.category = category;
+    if (status && status !== 'ALL') where.status = status;
+    if (lowStock === 'true') {
+      where.quantity = { lte: prisma.stock.findMany.minQuantity };
+    }
+    if (search) {
+      const s = String(search).trim();
+      where.OR = [
+        { name: { contains: s, mode: 'insensitive' } },
+        { reference: { contains: s, mode: 'insensitive' } },
+        { description: { contains: s, mode: 'insensitive' } },
+        { supplier: { contains: s, mode: 'insensitive' } },
+        { location: { contains: s, mode: 'insensitive' } }
+      ];
+    }
+
+    const orderBy = {};
+    if (sort === 'name') orderBy.name = 'asc';
+    else if (sort === 'reference') orderBy.reference = 'asc';
+    else if (sort === 'quantity') orderBy.quantity = 'desc';
+    else if (sort === 'category') orderBy.category = 'asc';
+    else orderBy.updatedAt = 'desc';
+
+    const [stocks, total] = await Promise.all([
+      prisma.stock.findMany({
+        where,
+        orderBy,
+        skip: offset,
+        take: parseInt(limit)
+      }),
+      prisma.stock.count({ where })
+    ]);
+
+    res.json({
+      stocks: stocks.map(transformStock),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (e) {
+    console.error('Erreur récupération stocks:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des stocks' });
+  }
+});
+
+// GET /api/stocks/:id - Récupérer un stock par ID
+app.get('/api/stocks/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
+    if (!stock) return res.status(404).json({ error: 'Article non trouvé' });
+    res.json(transformStock(stock));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lors de la récupération de l\'article' });
+  }
+});
+
+// POST /api/stocks - Créer un nouvel article
+app.post('/api/stocks', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const {
+      reference,
+      name,
+      description,
+      category = 'GENERAL',
+      subcategory,
+      quantity = 0,
+      minQuantity = 0,
+      unit = 'PIECE',
+      location,
+      supplier,
+      purchasePrice,
+      salePrice,
+      status = 'AVAILABLE',
+      lastRestockDate,
+      expiryDate,
+      barcode,
+      notes
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Le nom de l\'article est requis' });
+    }
+
+    // Vérifier unicité de la référence si fournie
+    if (reference) {
+      const existingRef = await prisma.stock.findFirst({ where: { reference } });
+      if (existingRef) {
+        return res.status(400).json({ error: 'Cette référence existe déjà' });
+      }
+    }
+
+    const stock = await prisma.stock.create({
+      data: {
+        reference,
+        name,
+        description,
+        category,
+        subcategory,
+        quantity: parseInt(quantity),
+        minQuantity: parseInt(minQuantity),
+        unit,
+        location,
+        supplier,
+        purchasePrice: purchasePrice ? parseFloat(purchasePrice) : null,
+        salePrice: salePrice ? parseFloat(salePrice) : null,
+        status,
+        lastRestockDate: lastRestockDate ? new Date(lastRestockDate) : null,
+        expiryDate: expiryDate ? new Date(expiryDate) : null,
+        barcode,
+        notes,
+        createdBy: req.user?.username || req.user?.sub || 'system'
+      }
+    });
+
+    res.status(201).json(transformStock(stock));
+  } catch (e) {
+    console.error('Erreur création stock:', e);
+    res.status(500).json({ error: 'Erreur lors de la création de l\'article' });
+  }
+});
+
+// PUT /api/stocks/:id - Mettre à jour un article
+app.put('/api/stocks/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const {
+      reference,
+      name,
+      description,
+      category,
+      subcategory,
+      quantity,
+      minQuantity,
+      unit,
+      location,
+      supplier,
+      purchasePrice,
+      salePrice,
+      status,
+      lastRestockDate,
+      expiryDate,
+      barcode,
+      notes
+    } = req.body;
+
+    // Vérifier que l'article existe
+    const existingStock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
+    if (!existingStock) {
+      return res.status(404).json({ error: 'Article non trouvé' });
+    }
+
+    // Vérifier unicité de la référence si modifiée
+    if (reference && reference !== existingStock.reference) {
+      const existingRef = await prisma.stock.findFirst({ 
+        where: { reference, id: { not: parseInt(id) } } 
+      });
+      if (existingRef) {
+        return res.status(400).json({ error: 'Cette référence existe déjà' });
+      }
+    }
+
+    const updateData = {};
+    if (reference !== undefined) updateData.reference = reference;
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) updateData.category = category;
+    if (subcategory !== undefined) updateData.subcategory = subcategory;
+    if (quantity !== undefined) updateData.quantity = parseInt(quantity);
+    if (minQuantity !== undefined) updateData.minQuantity = parseInt(minQuantity);
+    if (unit !== undefined) updateData.unit = unit;
+    if (location !== undefined) updateData.location = location;
+    if (supplier !== undefined) updateData.supplier = supplier;
+    if (purchasePrice !== undefined) updateData.purchasePrice = purchasePrice ? parseFloat(purchasePrice) : null;
+    if (salePrice !== undefined) updateData.salePrice = salePrice ? parseFloat(salePrice) : null;
+    if (status !== undefined) updateData.status = status;
+    if (lastRestockDate !== undefined) updateData.lastRestockDate = lastRestockDate ? new Date(lastRestockDate) : null;
+    if (expiryDate !== undefined) updateData.expiryDate = expiryDate ? new Date(expiryDate) : null;
+    if (barcode !== undefined) updateData.barcode = barcode;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updatedStock = await prisma.stock.update({
+      where: { id: parseInt(id) },
+      data: updateData
+    });
+
+    res.json(transformStock(updatedStock));
+  } catch (e) {
+    console.error('Erreur mise à jour stock:', e);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'article' });
+  }
+});
+
+app.delete('/api/stocks/:id', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    await prisma.stock.delete({ where: { id: parseInt(id) } });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Erreur suppression stock:', e);
+    res.status(500).json({ error: 'Erreur lors de la suppression de l\'article' });
+  }
+});
+
+// POST /api/stocks/:id/movement - Enregistrer un mouvement de stock
+app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const { type, quantity, reason, notes } = req.body;
+
+    if (!['IN', 'OUT', 'ADJUSTMENT'].includes(type)) {
+      return res.status(400).json({ error: 'Type de mouvement invalide' });
+    }
+
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({ error: 'Quantité invalide' });
+    }
+
+    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
+    if (!stock) {
+      return res.status(404).json({ error: 'Article non trouvé' });
+    }
+
+    let newQuantity = stock.quantity;
+    if (type === 'IN') {
+      newQuantity += parseInt(quantity);
+    } else if (type === 'OUT') {
+      newQuantity -= parseInt(quantity);
+      if (newQuantity < 0) {
+        return res.status(400).json({ error: 'Stock insuffisant' });
+      }
+    } else if (type === 'ADJUSTMENT') {
+      newQuantity = parseInt(quantity);
+    }
+
+    // Enregistrer le mouvement et mettre à jour le stock en transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Créer le mouvement
+      const movement = await tx.stockMovement.create({
+        data: {
+          stockId: parseInt(id),
+          type,
+          quantity: parseInt(quantity),
+          previousQuantity: stock.quantity,
+          newQuantity,
+          reason,
+          notes,
+          userId: req.user?.username || req.user?.sub || 'system'
+        }
+      });
+
+      // Mettre à jour le stock
+      const updatedStock = await tx.stock.update({
+        where: { id: parseInt(id) },
+        data: { 
+          quantity: newQuantity,
+          lastRestockDate: type === 'IN' ? new Date() : stock.lastRestockDate
+        }
+      });
+
+      return { movement, stock: updatedStock };
+    });
+
+    res.json({
+      movement: result.movement,
+      stock: transformStock(result.stock)
+    });
+  } catch (e) {
+    console.error('Erreur mouvement stock:', e);
+    res.status(500).json({ error: 'Erreur lors de l\'enregistrement du mouvement' });
+  }
+});
+
+// GET /api/stocks/:id/movements - Historique des mouvements d'un article
+app.get('/api/stocks/:id/movements', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const [movements, total] = await Promise.all([
+      prisma.stockMovement.findMany({
+        where: { stockId: parseInt(id) },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: parseInt(limit)
+      }),
+      prisma.stockMovement.count({ where: { stockId: parseInt(id) } })
+    ]);
+
+    res.json({
+      movements,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (e) {
+    console.error('Erreur historique mouvements:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération de l\'historique' });
+  }
+});
+
+// GET /api/stocks/categories - Liste des catégories
+app.get('/api/stocks/categories', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const categories = await prisma.stock.groupBy({
+      by: ['category'],
+      _count: { category: true },
+      orderBy: { category: 'asc' }
+    });
+
+    res.json(categories.map(cat => ({
+      name: cat.category,
+      count: cat._count.category
+    })));
+  } catch (e) {
+    console.error('Erreur récupération catégories:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des catégories' });
+  }
+});
+
+// GET /api/stocks/stats - Statistiques des stocks
+app.get('/api/stocks/stats', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const [
+      totalItems,
+      totalValue,
+      lowStockCount,
+      outOfStockCount,
+      categoriesStats
+    ] = await Promise.all([
+      prisma.stock.count(),
+      prisma.stock.aggregate({
+        _sum: { quantity: true }
+      }),
+      prisma.stock.count({
+        where: {
+          quantity: { lte: prisma.stock.fields.minQuantity }
+        }
+      }),
+      prisma.stock.count({
+        where: { quantity: 0 }
+      }),
+      prisma.stock.groupBy({
+        by: ['category'],
+        _count: { category: true },
+        _sum: { quantity: true }
+      })
+    ]);
+
+    res.json({
+      totalItems,
+      totalQuantity: totalValue._sum.quantity || 0,
+      lowStockCount,
+      outOfStockCount,
+      categories: categoriesStats.map(cat => ({
+        category: cat.category,
+        itemCount: cat._count.category,
+        totalQuantity: cat._sum.quantity || 0
+      }))
+    });
+  } catch (e) {
+    console.error('Erreur stats stocks:', e);
+    res.status(500).json({ error: 'Erreur lors du calcul des statistiques' });
+  }
+});
+
 // ---------- Start server ----------
 app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);

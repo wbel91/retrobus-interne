@@ -30,6 +30,11 @@ const cards = [
     color: "blue.100",
   },
   {
+    title: "Gestion des Stocks",
+    to: "/dashboard/stock-management",
+    color: "yellow.100",
+  },
+  {
     title: "Gestion Newsletter",
     to: "/dashboard/newsletter",
     color: "purple.100",

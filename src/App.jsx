@@ -15,6 +15,7 @@ import Evenements from "./pages/Evenements";
 import EventsManagement from "./pages/EventsManagement";
 import TestEventsPage from "./pages/TestEventsPage"; // Page de test
 import SiteManagement from "./pages/SiteManagement.jsx"; // Gestion du site - CORRIGER L'EXTENSION
+import StockManagement from "./pages/StockManagement"; // Gestion des stocks
 import Adhesion from "./pages/Adhesion";
 import Login from "./pages/Login";
 import MobileVehicle from "./pages/MobileVehicle";
@@ -56,6 +57,9 @@ export default function App() {
         
         {/* Gestion du site */}
         <Route path="/dashboard/site-management" element={<ProtectedRoute><SiteManagement /></ProtectedRoute>} />
+        
+        {/* Gestion des stocks */}
+        <Route path="/dashboard/stock-management" element={<ProtectedRoute><StockManagement /></ProtectedRoute>} />
         
         <Route path="/dashboard/newsletter" element={<ProtectedRoute><Newsletter /></ProtectedRoute>} />
         <Route path="/dashboard/members-management" element={<ProtectedRoute><MembersManagement /></ProtectedRoute>} />

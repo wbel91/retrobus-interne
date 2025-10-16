@@ -283,3 +283,105 @@ model Changelog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ---------- Stock Management ----------
+
+enum StockStatus {
+  AVAILABLE
+  LOW_STOCK
+  OUT_OF_STOCK
+  DISCONTINUED
+  RESERVED
+}
+
+enum StockCategory {
+  PIECES_DETACHEES
+  CONSOMMABLES
+  OUTILLAGE
+  EQUIPEMENT
+  DOCUMENTATION
+  MERCHANDISING
+  FOURNITURES
+  SECURITE
+  GENERAL
+}
+
+enum StockUnit {
+  PIECE
+  KG
+  LITRE
+  METRE
+  PAQUET
+  BOITE
+  ROULEAU
+  SET
+  AUTRE
+}
+
+enum MovementType {
+  IN          // Entrée (achat, retour, don)
+  OUT         // Sortie (utilisation, vente, perte)
+  ADJUSTMENT  // Correction d'inventaire
+}
+
+model Stock {
+  id              Int           @id @default(autoincrement())
+  reference       String?       @unique // Référence interne
+  barcode         String?       // Code-barres
+  name            String        // Nom de l'article
+  description     String?       // Description détaillée
+  category        StockCategory @default(GENERAL)
+  subcategory     String?       // Sous-catégorie libre
+  
+  // Quantités
+  quantity        Int           @default(0)
+  minQuantity     Int           @default(0) // Seuil d'alerte stock bas
+  unit            StockUnit     @default(PIECE)
+  
+  // Localisation et fournisseur
+  location        String?       // Emplacement physique
+  supplier        String?       // Fournisseur principal
+  
+  // Prix
+  purchasePrice   Float?        // Prix d'achat unitaire
+  salePrice       Float?        // Prix de vente unitaire
+  
+  // État et dates
+  status          StockStatus   @default(AVAILABLE)
+  lastRestockDate DateTime?     // Dernière date de réapprovisionnement
+  expiryDate      DateTime?     // Date d'expiration si applicable
+  
+  // Métadonnées
+  notes           String?       // Notes diverses
+  createdBy       String        // Utilisateur créateur
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations
+  movements       StockMovement[]
+  
+  @@index([category])
+  @@index([status])
+  @@index([quantity])
+  @@index([name])
+}
+
+model StockMovement {
+  id               Int          @id @default(autoincrement())
+  stockId          Int
+  type             MovementType
+  quantity         Int          // Quantité du mouvement
+  previousQuantity Int          // Quantité avant le mouvement
+  newQuantity      Int          // Quantité après le mouvement
+  reason           String?      // Raison du mouvement
+  notes            String?      // Notes sur le mouvement
+  userId           String       // Utilisateur qui a effectué le mouvement
+  createdAt        DateTime     @default(now())
+  
+  // Relations
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  
+  @@index([stockId])
+  @@index([type])
+  @@index([createdAt])
+}

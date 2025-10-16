@@ -16,6 +16,7 @@
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@yudiel/react-qr-scanner": "^2.3.1",
+    "axios": "^1.12.2",
     "framer-motion": "11.18.2",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
