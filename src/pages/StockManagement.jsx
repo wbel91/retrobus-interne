@@ -57,7 +57,7 @@ import {
   FiTrash2,
   FiPackage,
   FiAlertTriangle,
-  FiBarChart3,
+  FiBarChart,
   FiArrowUp,
   FiArrowDown,
   FiRefreshCw,
@@ -137,7 +137,6 @@ export default function StockManagement() {
     notes: '',
   });
   const [selectedStock, setSelectedStock] = useState(null);
-  const [activeTab, setActiveTab] = useState(0);
 
   const toast = useToast();
   const { isOpen: isStockModalOpen, onOpen: onStockModalOpen, onClose: onStockModalClose } = useDisclosure();
@@ -364,7 +363,7 @@ export default function StockManagement() {
               <StatLabel>Quantité totale</StatLabel>
               <StatNumber>{filteredStats.totalQuantity}</StatNumber>
               <StatHelpText>
-                <FiBarChart3 style={{ display: 'inline', marginRight: '4px' }} />
+                <FiBarChart style={{ display: 'inline', marginRight: '4px' }} />
                 Unités en stock
               </StatHelpText>
             </Stat>
