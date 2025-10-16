@@ -7,11 +7,6 @@ import bcrypt from 'bcrypt';
 import multer from 'multer';
 import QRCode from 'qrcode';
 import { PrismaClient } from '@prisma/client';
-import nodemailer from 'nodemailer';
-import PDFDocument from 'pdfkit';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 // Local modules
 import { documentsAPI as docsAPI, upload as documentsUpload } from './documents.js';
@@ -20,17 +15,6 @@ import * as newsletterService from './newsletter-service.js';
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
-
-// Transport SMTP (reutilise .env déjà présent)
-const mailer = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: String(process.env.SMTP_SECURE || 'false') === 'true', // true si port 465
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
 
 // ---------- CORS (dynamic + credentials-safe) ----------
 app.use((req, res, next) => {
@@ -1652,59 +1636,90 @@ app.post('/members/create-with-login', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/members/me - Profil du membre connecté (type 'member')
-app.get('/api/members/me', requireAuth, async (req, res) => {
+// Route pour sauvegarder les paramètres HelloAsso d'un événement
+app.post('/api/events/:id/helloasso', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
-  try {
-    if (req.user?.type !== 'member' || !req.user?.userId) {
-      return res.status(404).json({ error: 'Profil membre non trouvé pour cet utilisateur' });
-    }
-    const member = await prisma.member.findUnique({ where: { id: req.user.userId } });
-    if (!member) return res.status(404).json({ error: 'Membre introuvable' });
-    res.json(transformMember(member));
-  } catch (e) {
-    console.error('Erreur /api/members/me:', e);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
 
-// PUT /api/members/me - Mise à jour limitée par le membre lui-même
-app.put('/api/members/me', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
   try {
-    if (req.user?.type !== 'member' || !req.user?.userId) {
-      return res.status(403).json({ error: 'Accès réservé aux membres' });
-    }
-    const allowed = [
-      'phone','address','city','postalCode','newsletter',
-      'notes' // éventuellement
-    ];
-    const data = {};
-    for (const k of allowed) {
-      if (k in req.body) data[k] = req.body[k];
-    }
-    const updated = await prisma.member.update({
-      where: { id: req.user.userId },
-      data
+    const { id } = req.params;
+    const { eventUrl, organizationSlug, eventSlug, formId } = req.body;
+
+    // Vérifier que l'événement existe
+    const event = await prisma.event.findUnique({
+      where: { id }
     });
-    res.json(transformMember(updated));
-  } catch (e) {
-    console.error('Erreur PUT /api/members/me:', e);
-    res.status(500).json({ error: 'Erreur serveur' });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Événement non trouvé' });
+    }
+
+    // Mettre à jour les paramètres HelloAsso
+    const updatedEvent = await prisma.event.update({
+      where: { id },
+      data: {
+        helloAssoUrl: eventUrl,
+        helloAssoOrg: organizationSlug,
+        helloAssoEvent: eventSlug,
+        helloAssoFormId: formId,
+        updatedAt: new Date()
+      }
+    });
+
+    res.json({
+      message: 'Paramètres HelloAsso mis à jour',
+      event: updatedEvent
+    });
+
+  } catch (error) {
+    console.error('Error updating HelloAsso settings:', error);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour des paramètres HelloAsso' });
   }
 });
 
-// POST /api/members/change-password - Proxy vers la logique existante
-app.post('/api/members/change-password', requireAuth, async (req, res) => {
-  // On réutilise la logique de /auth/change-password pour compat front
-  // Appel direct: duplique la vérif ou redirige vers la même fonction
+// Route pour récupérer les participants HelloAsso d'un événement
+app.get('/api/events/:id/helloasso/participants', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+
   try {
-    // Appel interne: on forward la requête sur la même instance
-    req.url = '/auth/change-password';
-    return app._router.handle(req, res, () => {});
-  } catch (e) {
-    console.error('Erreur /api/members/change-password:', e);
-    res.status(500).json({ error: 'Erreur changement de mot de passe' });
+    const { id } = req.params;
+
+    // Récupérer l'événement avec ses paramètres HelloAsso
+    const event = await prisma.event.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        helloAssoUrl: true,
+        helloAssoOrg: true,
+        helloAssoEvent: true,
+        helloAssoFormId: true
+      }
+    });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Événement non trouvé' });
+    }
+
+    if (!event.helloAssoOrg || !event.helloAssoEvent) {
+      return res.status(400).json({ error: 'Paramètres HelloAsso non configurés pour cet événement' });
+    }
+
+    // Ici, vous pourriez implémenter la logique côté serveur pour récupérer les participants HelloAsso
+    // Pour l'instant, on retourne les paramètres pour que le client fasse l'appel
+
+    res.json({
+      event: {
+        id: event.id,
+        title: event.title,
+        helloAssoOrg: event.helloAssoOrg,
+        helloAssoEvent: event.helloAssoEvent,
+        helloAssoUrl: event.helloAssoUrl
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching HelloAsso participants:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des participants HelloAsso' });
   }
 });
 
@@ -1713,390 +1728,3 @@ app.listen(PORT, () => {
   console.log(`🚀 API Server running on http://localhost:${PORT}`);
   console.log('Boot =', new Date().toISOString());
 });
-
-// Génération PDF en mémoire
-async function generateMovementPDF({ stock, movement, actor, member }) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 36 });
-    const chunks = [];
-    doc.on('data', (c) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    // En-tête
-    doc
-      .fontSize(18)
-      .text('Fiche Mouvement de Stock', { align: 'center' })
-      .moveDown(0.5);
-
-    doc
-      .fontSize(10)
-      .text(`Date: ${new Date().toLocaleString('fr-FR')}`)
-      .text(`Acteur: ${actor?.display || '-'}`)
-      .text(`Membre: ${member?.fullName || '-'} (${member?.email || '-'})`)
-      .moveDown();
-
-    // Infos article
-    doc
-      .fontSize(14)
-      .text('Article', { underline: true })
-      .moveDown(0.2);
-    doc
-      .fontSize(11)
-      .text(`Nom: ${stock?.name || '-'}`)
-      .text(`Référence: ${stock?.reference || '-'}`)
-      .text(`Catégorie: ${stock?.category || '-'}`)
-      .text(`Emplacement: ${stock?.location || '-'}`)
-      .moveDown();
-
-    // Mouvement
-    doc
-      .fontSize(14)
-      .text('Mouvement', { underline: true })
-      .moveDown(0.2);
-    doc
-      .fontSize(11)
-      .text(`Type: ${movement?.type || '-'}`)
-      .text(`Quantité: ${movement?.quantity ?? '-'}`)
-      .text(`Quantité précédente: ${movement?.previousQuantity ?? '-'}`)
-      .text(`Nouvelle quantité: ${movement?.newQuantity ?? '-'}`)
-      .text(`Raison: ${movement?.reason || '-'}`)
-      .text(`Notes: ${movement?.notes || '-'}`)
-      .moveDown();
-
-    // Pied
-    doc
-      .moveDown()
-      .fontSize(9)
-      .fillColor('#666')
-      .text('Document généré automatiquement par MyRBE • RBE', { align: 'center' });
-
-    doc.end();
-  });
-}
-
-async function sendMovementEmail({ stock, movement, actor, member }) {
-  const subject = `Mouvement ${movement.type} – ${stock.name} (${stock.reference || 'n/r'})`;
-  const pdfBuffer = await generateMovementPDF({ stock, movement, actor, member });
-
-  const to = [];
-  const cc = [];
-
-  if (member?.email) to.push(member.email);
-  if (process.env.PRESIDENT_EMAIL) cc.push(process.env.PRESIDENT_EMAIL);
-
-  // Si aucun destinataire membre, envoie au président pour traçabilité
-  if (to.length === 0 && cc.length === 0 && process.env.SMTP_USER) {
-    cc.push(process.env.SMTP_USER);
-  }
-
-  const textBody =
-    `Bonjour,\n\n` +
-    `Un mouvement de stock a été enregistré:\n` +
-    `- Article: ${stock.name} (${stock.reference || 'n/r'})\n` +
-    `- Type: ${movement.type}\n` +
-    `- Quantité: ${movement.quantity}\n` +
-    `- Ancienne quantité: ${movement.previousQuantity}\n` +
-    `- Nouvelle quantité: ${movement.newQuantity}\n` +
-    `- Raison: ${movement.reason || '-'}\n` +
-    `- Notes: ${movement.notes || '-'}\n` +
-    `- Par: ${actor?.display || '-'}\n\n` +
-    `Le PDF récapitulatif est joint en pièce-jointe.\n\n` +
-    `— MyRBE`;
-
-  await mailer.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to.join(', '),
-    cc: cc.join(', '),
-    subject,
-    text: textBody,
-    attachments: [
-      {
-        filename: `mouvement-${movement.id || Date.now()}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf'
-      }
-    ]
-  });
-}
-
-// ---------- Stocks API (prefix /api) ----------
-const transformStock = (s) => ({
-  id: s.id,
-  name: s.name,
-  reference: s.reference,
-  description: s.description,
-  category: s.category,
-  location: s.location,
-  quantity: s.quantity,
-  minQuantity: s.minQuantity,
-  status: s.status,
-  supplier: s.supplier,
-  purchaseDate: s.purchaseDate,
-  expiryDate: s.expiryDate,
-  createdAt: s.createdAt,
-  updatedAt: s.updatedAt
-});
-
-app.get('/api/stocks/:id/movement', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    // Récupérer les mouvements associés à cet article
-    const movements = await prisma.movement.findMany({
-      where: { stockId: stock.id },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    res.json(movements);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch movements' });
-  }
-});
-
-app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const { type, quantity, reason, notes } = req.body || {};
-    if (!type || !quantity) {
-      return res.status(400).json({ error: 'Type et quantité requis' });
-    }
-
-    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    // Calculer la nouvelle quantité en fonction du type de mouvement
-    const newQuantity = type === 'ENTREE'
-      ? (stock.quantity + parseFloat(quantity))
-      : (stock.quantity - parseFloat(quantity));
-
-    // Créer le mouvement
-    const movement = await prisma.movement.create({
-      data: {
-        stockId: stock.id,
-        type,
-        quantity: parseFloat(quantity),
-        previousQuantity: stock.quantity,
-        newQuantity,
-        reason: reason || null,
-        notes: notes || null,
-        actor: req.user.username
-      }
-    });
-
-    // Mettre à jour le stock
-    const updatedStock = await prisma.stock.update({
-      where: { id: stock.id },
-      data: { quantity: newQuantity }
-    });
-
-    // ...dans POST /api/stocks/:id/movement juste avant res.json(...)
-    const result = await prisma.$transaction(async (tx) => {
-      // ...création du mouvement et update du stock...
-      return { movement, stock: updatedStock };
-    });
-
-    // Récupérer infos membre acteur (si connexion type "member")
-    let memberInfo = null;
-    let actor = { display: req.user?.username || req.user?.sub || 'system' };
-
-    if (req.user?.type === 'member' && req.user?.userId) {
-      try {
-        const m = await prisma.member.findUnique({ where: { id: req.user.userId } });
-        if (m) {
-          memberInfo = { email: m.email, fullName: `${m.firstName} ${m.lastName}`.trim() };
-          actor.display = memberInfo.fullName || actor.display;
-        }
-      } catch {}
-    }
-
-    // Envoi PDF + mail (résilient: ne bloque pas la réponse si erreur d’email)
-    sendMovementEmail({
-      stock: result.stock,
-      movement: result.movement,
-      actor,
-      member: memberInfo
-    }).catch(err => {
-      console.error('Erreur envoi email mouvement:', err);
-    });
-
-    res.json({
-      movement: result.movement,
-      stock: transformStock(result.stock)
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Create movement failed' });
-  }
-});
-
-app.get('/api/stocks/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-    res.json(transformStock(stock));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch stock' });
-  }
-});
-
-app.post('/api/stocks', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const {
-      name, reference, description, category, location,
-      quantity, minQuantity, status, supplier,
-      purchaseDate, expiryDate
-    } = req.body || {};
-
-    if (!name || !reference) {
-      return res.status(400).json({ error: 'Nom et référence requis' });
-    }
-
-    const data = {
-      name,
-      reference,
-      description: description || null,
-      category: category || null,
-      location: location || null,
-      quantity: quantity != null ? parseFloat(quantity) : 0,
-      minQuantity: minQuantity != null ? parseFloat(minQuantity) : 0,
-      status: status || 'ACTIVE',
-      supplier: supplier || null,
-      purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
-      expiryDate: expiryDate ? new Date(expiryDate) : null
-    };
-
-    const created = await prisma.stock.create({ data });
-    res.status(201).json(transformStock(created));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Create failed' });
-  }
-});
-
-app.put('/api/stocks/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const {
-      name, reference, description, category, location,
-      quantity, minQuantity, status, supplier,
-      purchaseDate, expiryDate
-    } = req.body || {};
-
-    const stock = await prisma.stock.findUnique({ where: { id: parseInt(id) } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    const data = {
-      name,
-      reference,
-      description: description || null,
-      category: category || null,
-      location: location || null,
-      quantity: quantity != null ? parseFloat(quantity) : 0,
-      minQuantity: minQuantity != null ? parseFloat(minQuantity) : 0,
-      status: status || 'ACTIVE',
-      supplier: supplier || null,
-      purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
-      expiryDate: expiryDate ? new Date(expiryDate) : null
-    };
-
-    const updated = await prisma.stock.update({
-      where: { id: stock.id },
-      data
-    });
-    res.json(transformStock(updated));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Update failed' });
-  }
-});
-
-app.delete('/api/stocks/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    await prisma.stock.delete({ where: { id: parseInt(id) } });
-    res.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Delete failed' });
-  }
-});
-
-// ESM __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Dossiers RétroMail (à la racine de l'API: /api/retromail)
-const RETROMAIL_DIR = path.join(__dirname, '..', 'retromail');
-const RETROMAIL_UPLOADS_DIR = path.join(RETROMAIL_DIR, 'uploads');
-
-// Assure l'existence des dossiers (au boot)
-async function ensureRetromailDirs() {
-  try {
-    await fs.mkdir(RETROMAIL_DIR, { recursive: true });
-    await fs.mkdir(RETROMAIL_UPLOADS_DIR, { recursive: true });
- 
-  } catch (e) {
-    console.error('Erreur création dossiers Retromail:', e);
-  }
-}
-ensureRetromailDirs();
-
-// Helpers sécurité path traversal
-function safeJoin(base, target) {
-  const normalized = path.normalize(target).replace(/^(\.\.(\/|\\|$))+/, '');
-  return path.join(base, normalized);
-}
-
-// GET /retromail/list -> renvoie la liste des fichiers .json
-app.get('/retromail/list', async (_req, res) => {
-  try {
-    const entries = await fs.readdir(RETROMAIL_DIR, { withFileTypes: true });
-    const jsonFiles = entries
-      .filter((d) => d.isFile() && d.name.toLowerCase().endsWith('.json'))
-      .map((d) => d.name)
-      .sort();
-    return res.json(jsonFiles);
-  } catch (e) {
-    console.warn('retromail/list error:', e);
-    // Renvoie un tableau vide au lieu d'un 500 pour éviter de casser le front
-    return res.json([]);
-  }
-});
-
-// GET /retromail/:filename -> retourne le contenu JSON (pour l’UI)
-app.get('/retromail/:filename', async (req, res, next) => {
-  try {
-    const fn = req.params.filename || '';
-    // refuse chemins bizarres
-    if (!/^[a-zA-Z0-9._-]+$/.test(fn)) return res.status(400).json({ error: 'Nom de fichier invalide' });
-    if (!fn.toLowerCase().endsWith('.json')) {
-      // Laisse la main au static si ce n’est pas du JSON (ex: .pdf)
-      return next();
-    }
-    const filePath = safeJoin(RETROMAIL_DIR, fn);
-    const buf = await fs.readFile(filePath, 'utf-8');
-    const json = JSON.parse(buf);
-    return res.json(json);
-  } catch (e) {
-    if (e.code === 'ENOENT') return res.status(404).json({ error: 'Message introuvable' });
-    console.error('retromail read error:', e);
-    return res.status(500).json({ error: 'Erreur lecture message' });
-  }
-});
-
-// Static pour /retromail/uploads (images/vidéos) et PDF dans /retromail
-// À monter APRÈS les routes JSON pour ne pas masquer /retromail/list
-app.use('/retromail/uploads', express.static(RETROMAIL_UPLOADS_DIR, { fallthrough: true }));
-app.use('/retromail', express.static(RETROMAIL_DIR, { fallthrough: true }));
