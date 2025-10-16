@@ -543,8 +543,8 @@ app.put('/vehicles/:parc', requireAuth, async (req, res) => {
       type: 'type',
       energie: 'energie',
       description: 'description',
-      history: 'history',   // <-- ajout: clé correcte attendue par le front
-      histoire: 'history'   // <-- alias pour compat éventuelle
+      history: 'history',   // accepte “history” (front)
+      histoire: 'history'   // accepte aussi “histoire” (FR)
     };
 
     const dataUpdate = {};
@@ -612,7 +612,7 @@ app.delete('/vehicles/:parc', requireAuth, async (req, res) => {
 });
 
 // ---------- Galerie upload ----------
-app.post('/vehicles/:parc/gallery', requireAuth, documentsUpload.array('images', 10), async (req, res) => {
+app.post('/vehicles/:parc/gallery', requireAuth, uploadGallery.array('images', 10), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
@@ -634,7 +634,6 @@ app.post('/vehicles/:parc/gallery', requireAuth, documentsUpload.array('images',
     });
 
     const MAX_GALLERY_IMAGES = 12;
-    // dédup simple si jamais une même image est renvoyée plusieurs fois
     const gallery = Array.from(new Set(existing.concat(added))).slice(0, MAX_GALLERY_IMAGES);
 
     const updated = await prisma.vehicle.update({
@@ -675,7 +674,7 @@ app.delete('/vehicles/:parc/gallery', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/vehicles/:parc/background', requireAuth, documentsUpload.single('image'), async (req, res) => {
+app.post('/vehicles/:parc/background', requireAuth, uploadGallery.single('image'), async (req, res) => {
   if (!ensureDB(res)) return;
   try {
     const { parc } = req.params;
@@ -685,7 +684,7 @@ app.post('/vehicles/:parc/background', requireAuth, documentsUpload.single('imag
     if (!v) return res.status(404).json({ error: 'Vehicle not found' });
 
     const base64 = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype;
+    const mimeType = req.file.mimetype || 'image/jpeg';
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     const updated = await prisma.vehicle.update({
@@ -1160,16 +1159,14 @@ app.get('/api/stocks', requireAuth, async (req, res) => {
       orderBy: { name: 'asc' }
     });
 
-    // Filtre lowStock en JS (quantity <= minQuantity)
     const filtered = (String(lowStock) === 'true')
       ? rows.filter(r => (r.quantity ?? 0) <= (r.minQuantity ?? 0))
       : rows;
 
     res.json({ stocks: filtered.map(transformStock) });
   } catch (e) {
-    console.error(e);
-    // Retourner structure vide plutôt qu'un 500 pour ne pas casser le front
-    res.json({ stocks: [] });
+    console.error('stocks list error:', e);
+    res.json({ stocks: [] }); // ne pas casser le front
   }
 });
 
@@ -2085,147 +2082,18 @@ app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Create movement failed' });
   }
 });
+
+app.get('/newsletter/stats', requireAuth, async (_req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const [total, confirmed, pending] = await Promise.all([
+      prisma.newsletterSubscriber.count(),
+      prisma.newsletterSubscriber.count({ where: { status: 'CONFIRMED' } }),
+      prisma.newsletterSubscriber.count({ where: { status: 'PENDING' } })
+    ]);
+    res.json({ total, confirmed, pending });
+  } catch (e) {
+    console.error('newsletter/stats error:', e);
     res.status(500).json({ error: 'Stats fetch failed' });
-
-app.put('/newsletter/:id/status', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { status } = req.body || {};
-    if (!status) return res.status(400).json({ error: 'Status requis' });
-
-    const id = req.params.id;
-    const updated = await prisma.newsletterSubscriber.update({
-      where: { id },
-      data: { status }
-    });
-
-    res.json(transformSubscriber(updated));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Update failed' });
-  }
-});
-
-// Historique des changements de statut d'une newsletter
-app.get('/api/newsletter/:id/history', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const newsletter = await prisma.newsletterSubscriber.findUnique({ where: { id } });
-    if (!newsletter) return res.status(404).json({ error: 'Subscriber not found' });
-
-    const history = await prisma.statusChangeLog.findMany({
-      where: { subscriberId: id },
-      orderBy: { changedAt: 'desc' }
-    });
-
-    res.json(history);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch history' });
-  }
-});
-
-// Changer le statut d'une newsletter (active/inactive)
-app.post('/api/newsletter/:id/toggle-status', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const newsletter = await prisma.newsletterSubscriber.findUnique({ where: { id } });
-    if (!newsletter) return res.status(404).json({ error: 'Subscriber not found' });
-
-    const newStatus = newsletter.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-
-    // Mettre à jour le statut
-    await prisma.newsletterSubscriber.update({
-      where: { id },
-      data: { status: newStatus }
-    });
-
-    // Logger le changement de statut
-    await prisma.statusChangeLog.create({
-      data: {
-        subscriberId: id,
-        oldStatus: newsletter.status,
-        newStatus,
-        changedAt: new Date(),
-        changedBy: req.user.username
-      }
-    });
-
-    res.json({ success: true, newStatus });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Status update failed' });
-  }
-});
-
-// Récupérer les paramètres de l'API HelloAsso
-app.get('/api/helloasso/settings', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const settings = await prisma.helloAssoSettings.findFirst();
-    res.json(settings || {});
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch settings' });
-  }
-});
-
-// Mettre à jour les paramètres de l'API HelloAsso
-app.post('/api/helloasso/settings', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { orgId, apiKey, eventId } = req.body;
-
-    // Validation simple
-    if (!orgId || !apiKey || !eventId) {
-      return res.status(400).json({ error: 'orgId, apiKey et eventId requis' });
-    }
-
-    // Upsert des paramètres HelloAsso
-    const settings = await prisma.helloAssoSettings.upsert({
-      where: { id: 1 },
-      update: { orgId, apiKey, eventId },
-      create: { orgId, apiKey, eventId }
-    });
-
-    res.json(settings);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to update settings' });
-  }
-});
-
-// Tester la connexion à l'API HelloAsso
-app.post('/api/helloasso/test-connection', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { orgId, apiKey } = req.body;
-
-    // Validation simple
-    if (!orgId || !apiKey) {
-      return res.status(400).json({ error: 'orgId et apiKey requis' });
-    }
-
-    // Faire une requête test à HelloAsso
-    const response = await fetch('https://api.helloasso.com/v3/organizations', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      const errorDetails = await response.json();
-      return res.status(response.status).json({ error: errorDetails.message || 'Erreur inconnue' });
-    }
-
-    const data = await response.json();
-    res.json({ success: true, data });
-  } catch (e) {
-    console.error('HelloAsso connection test error:', e);
-    res.status(500).json({ error: 'Erreur lors du test de connexion à HelloAsso' });
   }
 });
