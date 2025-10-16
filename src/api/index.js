@@ -11,6 +11,7 @@ export { flashAPI } from './flash.js';
 export { stocksAPI } from './stocks.js';
 
 // Import des API pour l'export par défaut
+import { apiClient } from './config.js'; // ✅ Ajouter cet import
 import { authAPI } from './auth.js';
 import { eventsAPI } from './events.js';
 import { vehiculesAPI } from './vehicles.js';
