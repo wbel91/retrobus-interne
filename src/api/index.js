@@ -11,7 +11,7 @@ export { flashAPI } from './flash.js';
 export { stocksAPI } from './stocks.js';
 
 // Import des API pour l'export par défaut
-import { apiClient } from './config.js'; // ✅ Ajouter cet import
+import { apiClient } from './config.js'; // ✅ nécessaire pour l'alias `api`
 import { authAPI } from './auth.js';
 import { eventsAPI } from './events.js';
 import { vehiculesAPI } from './vehicles.js';
@@ -22,7 +22,7 @@ import { myRBEAPI } from './myrbe.js';
 import { flashAPI } from './flash.js';
 import { stocksAPI } from './stocks.js';
 
-// Alias pour compatibility
+// ✅ Alias simple compatible avec l’existant (utilisé par StockManagement.jsx)
 export const api = {
   get: (url, options) => apiClient.get(url, options),
   post: (url, data, options) => apiClient.post(url, data, options),

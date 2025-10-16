@@ -159,13 +159,16 @@ export default function StockManagement() {
       if (filters.lowStock) params.append('lowStock', 'true');
 
       const response = await api.get(`/api/stocks?${params.toString()}`);
-      setStocks(response.data.stocks || []);
+      // response est déjà le JSON; pas de response.data ici
+      const list = response?.stocks ?? (Array.isArray(response) ? response : []);
+      setStocks(list);
     } catch (error) {
       console.error('Erreur lors du chargement des stocks:', error);
+      setStocks([]); // fallback
       toast({
-        title: 'Erreur',
-        description: 'Impossible de charger les stocks',
-        status: 'error',
+        title: 'Stocks indisponibles',
+        description: 'L’API des stocks n’est pas encore prête ou a renvoyé une erreur',
+        status: 'warning',
         duration: 3000,
       });
     } finally {
@@ -176,9 +179,11 @@ export default function StockManagement() {
   const fetchStats = async () => {
     try {
       const response = await api.get('/api/stocks/stats');
-      setStats(response.data);
+      // response est déjà le JSON; pas de response.data ici
+      setStats(response || {});
     } catch (error) {
       console.error('Erreur lors du chargement des statistiques:', error);
+      setStats({}); // fallback
     }
   };
 

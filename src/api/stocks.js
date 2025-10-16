@@ -1,54 +1,46 @@
 import { apiClient } from './config.js';
 
-export const stocksAPI = {
-  // Liste des stocks avec filtres
-  getAll: (params = {}) => {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        searchParams.append(key, value);
-      }
-    });
-    return apiClient.get(`/api/stocks?${searchParams.toString()}`);
-  },
+const toQuery = (params = {}) => {
+  const sp = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string' && value.trim() === '') return;
+    sp.append(key, String(value));
+  });
+  const qs = sp.toString();
+  return qs ? `?${qs}` : '';
+};
 
-  // Récupérer un stock par ID
+export const stocksAPI = {
+  // Liste avec filtres/pagination: { page, limit, category, status, search, lowStock, sort }
+  getAll: (params = {}) => apiClient.get(`/api/stocks${toQuery(params)}`),
+
+  // Un article par id
   getById: (id) => apiClient.get(`/api/stocks/${id}`),
 
-  // Créer un nouveau stock
-  create: (stockData) => apiClient.post('/api/stocks', stockData),
+  // Création d’un article
+  create: (data) => apiClient.post('/api/stocks', data),
 
-  // Mettre à jour un stock
-  update: (id, stockData) => apiClient.put(`/api/stocks/${id}`, stockData),
+  // Mise à jour d’un article
+  update: (id, data) => apiClient.put(`/api/stocks/${id}`, data),
 
-  // Supprimer un stock
+  // Suppression d’un article
   delete: (id) => apiClient.delete(`/api/stocks/${id}`),
 
-  // Enregistrer un mouvement de stock
-  addMovement: (stockId, movementData) => 
-    apiClient.post(`/api/stocks/${stockId}/movement`, movementData),
+  // Mouvement de stock: { type: 'IN'|'OUT'|'ADJUSTMENT', quantity, reason?, notes? }
+  addMovement: (stockId, movement) =>
+    apiClient.post(`/api/stocks/${stockId}/movement`, movement),
 
-  // Récupérer l'historique des mouvements
-  getMovements: (stockId, params = {}) => {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        searchParams.append(key, value);
-      }
-    });
-    return apiClient.get(`/api/stocks/${stockId}/movements?${searchParams.toString()}`);
-  },
+  // Historique des mouvements: { page, limit }
+  getMovements: (stockId, params = {}) =>
+    apiClient.get(`/api/stocks/${stockId}/movements${toQuery(params)}`),
 
-  // Récupérer les statistiques
+  // Statistiques globales
   getStats: () => apiClient.get('/api/stocks/stats'),
 
-  // Récupérer les catégories
+  // Catégories (avec compte)
   getCategories: () => apiClient.get('/api/stocks/categories'),
-
-  // Export des données
-  export: (format = 'csv') => {
-    return apiClient.get(`/api/stocks/export?format=${format}`, {
-      responseType: 'blob'
-    });
-  }
 };
+
+// Optionnel: export par défaut
+export default stocksAPI;
