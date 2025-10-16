@@ -9,6 +9,8 @@ import QRCode from 'qrcode';
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs/promises';
 import path from 'path';
+import nodemailer from 'nodemailer';
+import PDFDocument from 'pdfkit';
 
 // Local modules
 import { documentsAPI as docsAPI, upload as documentsUpload } from './documents.js';
@@ -17,6 +19,16 @@ import * as newsletterService from './newsletter-service.js';
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
+
+// SMTP (optionnel: ne bloque pas si non configuré)
+const mailer = (process.env.SMTP_HOST && process.env.SMTP_USER)
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: String(process.env.SMTP_SECURE || 'false') === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    })
+  : null;
 
 // ---------- CORS (dynamic + credentials-safe) ----------
 app.use((req, res, next) => {
@@ -1209,6 +1221,13 @@ async function hashPassword(password) {
   return await bcrypt.hash(password, saltRounds);
 }
 
+async function verifyPassword(plain, hashed) {
+  // tolérance legacy: si hashed semble en clair, comparer direct
+  if (!hashed || hashed.length < 40) return plain === hashed;
+  try { return await bcrypt.compare(plain, hashed); }
+  catch { return false; }
+}
+
 function transformMember(member) {
   if (!member) return null;
   
@@ -1754,7 +1773,82 @@ async function retroMailSavePdf(buffer, suggestedName) {
   return { fileName: pdfName, url: `/retromail/${pdfName}` };
 }
 
-export default app;
+// ...placer ceci au-dessus des routes /api/stocks/:id/movement...
+
+async function generateMovementPDF({ stock, movement, actor, member }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 36 });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).text('Fiche Mouvement de Stock', { align: 'center' }).moveDown(0.5);
+    doc.fontSize(10)
+      .text(`Date: ${new Date().toLocaleString('fr-FR')}`)
+      .text(`Acteur: ${actor?.display || '-'}`)
+      .text(`Membre: ${member?.fullName || '-'} (${member?.email || '-'})`)
+      .moveDown();
+
+    doc.fontSize(14).text('Article', { underline: true }).moveDown(0.2);
+    doc.fontSize(11)
+      .text(`Nom: ${stock?.name || '-'}`)
+      .text(`Référence: ${stock?.reference || '-'}`)
+      .text(`Catégorie: ${stock?.category || '-'}`)
+      .text(`Emplacement: ${stock?.location || '-'}`)
+      .moveDown();
+
+    doc.fontSize(14).text('Mouvement', { underline: true }).moveDown(0.2);
+    doc.fontSize(11)
+      .text(`Type: ${movement?.type || '-'}`)
+      .text(`Quantité: ${movement?.quantity ?? '-'}`)
+      .text(`Quantité précédente: ${movement?.previousQuantity ?? '-'}`)
+      .text(`Nouvelle quantité: ${movement?.newQuantity ?? '-'}`)
+      .text(`Raison: ${movement?.reason || '-'}`)
+      .text(`Notes: ${movement?.notes || '-'}`)
+      .moveDown();
+
+    doc.moveDown().fontSize(9).fillColor('#666')
+      .text('Document généré automatiquement par MyRBE • RBE', { align: 'center' });
+    doc.end();
+  });
+}
+
+async function sendMovementEmail({ stock, movement, actor, member }) {
+  if (!mailer) return; // SMTP non configuré
+  const subject = `Mouvement ${movement.type} – ${stock.name} (${stock.reference || 'n/r'})`;
+  const pdfBuffer = await generateMovementPDF({ stock, movement, actor, member });
+
+  const to = [];
+  const cc = [];
+  if (member?.email) to.push(member.email);
+  if (process.env.PRESIDENT_EMAIL) cc.push(process.env.PRESIDENT_EMAIL);
+  if (to.length === 0 && cc.length === 0 && process.env.SMTP_USER) cc.push(process.env.SMTP_USER);
+
+  const textBody =
+    `Bonjour,\n\n` +
+    `Un mouvement de stock a été enregistré:\n` +
+    `- Article: ${stock.name} (${stock.reference || 'n/r'})\n` +
+    `- Type: ${movement.type}\n` +
+    `- Quantité: ${movement.quantity}\n` +
+    `- Ancienne quantité: ${movement.previousQuantity}\n` +
+    `- Nouvelle quantité: ${movement.newQuantity}\n` +
+    `- Raison: ${movement.reason || '-'}\n` +
+    `- Notes: ${movement.notes || '-'}\n` +
+    `- Par: ${actor?.display || '-'}\n\n` +
+    `Le PDF récapitulatif est joint en pièce-jointe.\n\n` +
+    `— MyRBE`;
+
+  await mailer.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: to.join(', '),
+    cc: cc.join(', '),
+    subject,
+    text: textBody,
+    attachments: [{ filename: `mouvement-${movement.id || Date.now()}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }]
+  });
+}
+
 // Historique (plural)
 app.get('/api/stocks/:id/movements', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
@@ -1903,7 +1997,39 @@ app.get('/newsletter/stats', requireAuth, async (_req, res) => {
     ]);
     res.json({ total, confirmed, pending });
   } catch (e) {
-    console.error('newsletter/stats error:', e);
-    res.status(500).json({ error: 'Stats fetch failed' });
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch newsletter stats' });
   }
+});
+
+const uploadGallery = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if ((file.mimetype || '').startsWith('image/')) return cb(null, true);
+    cb(new Error('Seules les images sont acceptées'), false);
+  }
+});
+
+const transformStock = (s) => ({
+  id: s.id,
+  reference: s.reference,
+  name: s.name,
+  description: s.description,
+  category: s.category,
+  subcategory: s.subcategory,
+  quantity: s.quantity,
+  minQuantity: s.minQuantity,
+  unit: s.unit,
+  location: s.location,
+  supplier: s.supplier,
+  purchasePrice: s.purchasePrice,
+  salePrice: s.salePrice,
+  status: s.status,
+  lastRestockDate: s.lastRestockDate,
+  expiryDate: s.expiryDate,
+  notes: s.notes,
+  createdBy: s.createdBy,
+  createdAt: s.createdAt,
+  updatedAt: s.updatedAt
 });
