@@ -337,19 +337,35 @@ app.post('/auth/member-login', async (req, res) => {
   if (!ensureDB(res)) return;
   
   try {
-    const { matricule, password } = req.body;
+    const { identifier, matricule, password } = req.body;
+    const loginIdentifier = identifier || matricule;
 
-    if (!matricule || !password) {
-      return res.status(400).json({ error: 'Matricule et mot de passe requis' });
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({ error: 'Identifiant et mot de passe requis' });
     }
 
-    // Trouver le membre
-    const member = await prisma.member.findUnique({
-      where: { matricule }
+    console.log('🔐 Tentative de connexion membre:', loginIdentifier);
+
+    // Trouver le membre par matricule ou email
+    const member = await prisma.member.findFirst({
+      where: {
+        OR: [
+          { matricule: loginIdentifier },
+          { email: loginIdentifier }
+        ]
+      }
     });
 
-    if (!member || !member.loginEnabled) {
-      return res.status(401).json({ error: 'Matricule invalide ou accès désactivé' });
+    console.log('👤 Membre trouvé:', member ? `${member.firstName} ${member.lastName} (${member.matricule})` : 'Aucun');
+
+    if (!member) {
+      return res.status(401).json({ error: 'Identifiant invalide' });
+    }
+
+    if (!member.loginEnabled) {
+      return res.status(401).json({ 
+        error: 'Accès MyRBE non activé. Contactez un administrateur.' 
+      });
     }
 
     // Vérifier verrouillage
@@ -361,10 +377,27 @@ app.post('/auth/member-login', async (req, res) => {
 
     // Vérifier mot de passe
     const passwordToCheck = member.temporaryPassword || member.internalPassword;
-    if (!passwordToCheck || !(await verifyPassword(password, passwordToCheck))) {
+    
+    if (!passwordToCheck) {
+      return res.status(401).json({ 
+        error: 'Mot de passe non configuré. Contactez un administrateur.' 
+      });
+    }
+
+    let passwordValid = false;
+    
+    // Si c'est un mot de passe temporaire en clair, comparer directement
+    if (member.temporaryPassword && password === member.temporaryPassword) {
+      passwordValid = true;
+    } else if (member.internalPassword) {
+      // Sinon, vérifier le mot de passe hashé
+      passwordValid = await verifyPassword(password, member.internalPassword);
+    }
+
+    if (!passwordValid) {
       // Incrémenter tentatives échouées
       const attempts = member.loginAttempts + 1;
-      const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null; // 15 min
+      const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
 
       await prisma.member.update({
         where: { id: member.id },
@@ -374,6 +407,7 @@ app.post('/auth/member-login', async (req, res) => {
         }
       });
 
+      console.log('❌ Mot de passe incorrect pour:', loginIdentifier);
       return res.status(401).json({ error: 'Mot de passe incorrect' });
     }
 
@@ -383,9 +417,13 @@ app.post('/auth/member-login', async (req, res) => {
       data: {
         loginAttempts: 0,
         lockedUntil: null,
-        lastLoginAt: new Date()
+        lastLoginAt: new Date(),
+        // Si c'était un mot de passe temporaire, forcer le changement
+        mustChangePassword: !!member.temporaryPassword
       }
     });
+
+    console.log('✅ Connexion réussie pour:', member.matricule);
 
     // Générer token JWT
     const token = issueToken({
@@ -405,13 +443,14 @@ app.post('/auth/member-login', async (req, res) => {
         email: member.email,
         role: member.role,
         matricule: member.matricule,
-        mustChangePassword: member.mustChangePassword,
-        roles: [member.role] // Compatibilité avec le système existant
+        mustChangePassword: member.mustChangePassword || !!member.temporaryPassword,
+        roles: [member.role],
+        type: 'member'
       }
     });
 
   } catch (error) {
-    console.error('Error in member login:', error);
+    console.error('❌ Erreur connexion membre:', error);
     res.status(500).json({ error: 'Erreur de connexion' });
   }
 });
@@ -1242,1201 +1281,209 @@ app.get('/api/stocks/stats', requireAuth, async (_req, res) => {
   }
 });
 
-// ---------- Member Helper Functions ----------
-function generateTemporaryPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijklmnpqrstuvwxyz23456789';
-  let password = '';
-  for (let i = 0; i < 8; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-async function hashPassword(password) {
-  const saltRounds = 12;
-  return await bcrypt.hash(password, saltRounds);
-}
-
-async function verifyPassword(plain, hashed) {
-  // tolérance legacy: si hashed semble en clair, comparer direct
-  if (!hashed || hashed.length < 40) return plain === hashed;
-  try { return await bcrypt.compare(plain, hashed); }
-  catch { return false; }
-}
-
-function transformMember(member) {
-  if (!member) return null;
-  
-  return {
-    id: member.id,
-    memberNumber: member.memberNumber,
-    matricule: member.matricule,
-    firstName: member.firstName,
-    lastName: member.lastName,
-    email: member.email,
-    phone: member.phone,
-    address: member.address,
-    city: member.city,
-    postalCode: member.postalCode,
-    birthDate: member.birthDate,
-    membershipType: member.membershipType,
-    membershipStatus: member.membershipStatus,
-    role: member.role,
-    hasInternalAccess: member.hasInternalAccess,
-    hasExternalAccess: member.hasExternalAccess,
-    loginEnabled: member.loginEnabled,
-    mustChangePassword: member.mustChangePassword,
-    newsletter: member.newsletter,
-    paymentAmount: member.paymentAmount,
-    paymentMethod: member.paymentMethod,
-    lastPaymentDate: member.lastPaymentDate,
-    notes: member.notes,
-    createdAt: member.createdAt,
-    updatedAt: member.updatedAt,
-    createdBy: member.createdBy
-  };
-}
-
-// ---------- Members API (prefix /api) ----------
-app.get('/api/members', authenticateToken, async (req, res) => {
+// ========== ENDPOINTS OPÉRATIONS PROGRAMMÉES ==========
+app.get('/finance/scheduled-operations', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const { page = 1, limit = 20, status, search, sort = 'lastName', role } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-
-    const where = {};
-    if (status && status !== 'ALL') where.membershipStatus = status;
-    if (role && role !== 'ALL') where.role = role;
-    if (search) {
-      const s = String(search).trim();
-      where.OR = [
-        { firstName: { contains: s, mode: 'insensitive' } },
-        { lastName: { contains: s, mode: 'insensitive' } },
-        { email: { contains: s, mode: 'insensitive' } },
-        { memberNumber: { contains: s, mode: 'insensitive' } },
-      ];
-    }
-
-    const orderBy = {};
-    if (sort === 'lastName') orderBy.lastName = 'asc';
-    else if (sort === 'firstName') orderBy.firstName = 'asc';
-    else orderBy.joinDate = 'desc';
-
-    const [members, total] = await Promise.all([
-      prisma.member.findMany({
-        where,
-        orderBy,
-        skip: offset,
-        take: parseInt(limit),
-        select: {
-          id: true,
-          memberNumber: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          membershipType: true,
-          membershipStatus: true,
-          joinDate: true,
-          renewalDate: true,
-          hasExternalAccess: true,
-          hasInternalAccess: true,
-          newsletter: true,
-          lastPaymentDate: true,
-          paymentAmount: true,
-          paymentMethod: true,
-          licenseExpiryDate: true,
-          driverLicense: true
-        }
-      }),
-      prisma.member.count({ where })
-    ]);
-
-    res.json({
-      members,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
+    const operations = await prisma.scheduledOperation.findMany({
+      orderBy: { dueDate: 'asc' }
     });
-  } catch (e) {
-    console.error('Erreur récupération adhérents (/api):', e);
-    res.status(500).json({ error: 'Erreur lors de la récupération des adhérents' });
-  }
-});
-
-app.post('/api/members', authenticateToken, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const {
-      firstName, lastName, email, matricule, phone, address, city, postalCode,
-      birthDate, membershipType = 'STANDARD', membershipStatus = 'PENDING',
-      renewalDate, paymentAmount, paymentMethod, hasExternalAccess = false,
-      hasInternalAccess = false, newsletter = true, notes, role = 'MEMBER',
-      driverLicense, licenseExpiryDate, medicalCertificateDate,
-      emergencyContact, emergencyPhone, driverCertifications = [],
-      vehicleAuthorizations = [], maxPassengers, driverNotes
-    } = req.body;
-
-    if (!firstName || !lastName || !email) {
-      return res.status(400).json({ error: 'firstName, lastName, email requis' });
-    }
-
-    // Validation du matricule uniquement s'il est fourni (optionnel pour /api/members)
-    if (matricule && !/^[a-z]+\.[a-z]+$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: j.dupont) - lettres minuscules uniquement' });
-    }
-
-    // Remplacer par une validation plus flexible :
-    if (matricule && !/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
-    }
-
-    // Vérifier unicité email et matricule
-    const whereConditions = [{ email }];
-    if (matricule) {
-      whereConditions.push({ matricule });
-    }
-
-    const existingMember = await prisma.member.findFirst({
-      where: { OR: whereConditions }
-    });
-
-    if (existingMember) {
-      if (existingMember.email === email) {
-        return res.status(400).json({ error: 'Email déjà utilisé' });
-      }
-      if (existingMember.matricule === matricule) {
-        return res.status(400).json({ error: 'Matricule déjà utilisé' });
-      }
-    }
-
-    // Générer mot de passe temporaire
-    const tempPassword = generateTemporaryPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-
-    // Générer numéro d'adhérent unique
-    const year = new Date().getFullYear();
-    const count = await prisma.member.count() + 1;
-    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
-
-    // Créer l'adhérent
-    const member = await prisma.member.create({
-      data: {
-        memberNumber,
-        firstName,
-        lastName,
-        email,
-        matricule, // Identifiant de connexion (ex: w.belaidi)
-        membershipType,
-        membershipStatus,
-        role,
-        hasInternalAccess,
-        hasExternalAccess,
-        loginEnabled: true,
-        temporaryPassword: hashedPassword,
-        mustChangePassword: true,
-        passwordChangedAt: new Date(),
-        phone,
-        address,
-        city,
-        postalCode,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
-        paymentMethod,
-        newsletter,
-        notes,
-        createdBy: req.user?.username || 'system',
-        lastPaymentDate: paymentAmount ? new Date() : null,
-        // Assurer que les champs essentiels sont bien remplis
-        joinDate: new Date(),
-        renewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 an
-      }
-    });
-
-    // Retourner les bonnes informations
-    res.status(201).json({
-      member: {
-        id: member.id,
-        memberNumber: member.memberNumber,
-        matricule: member.matricule, // Identifiant de connexion
-        firstName: member.firstName,
-        lastName: member.lastName,
-        email: member.email,
-        membershipType: member.membershipType,
-        membershipStatus: member.membershipStatus,
-        role: member.role,
-        hasInternalAccess: member.hasInternalAccess,
-        hasExternalAccess: member.hasExternalAccess,
-        loginEnabled: member.loginEnabled,
-        createdAt: member.createdAt
-      },
-      loginCredentials: {
-        matricule: member.matricule, // Identifiant de connexion
-        temporaryPassword: tempPassword // Mot de passe temporaire
-      },
-      message: `Adhérent créé avec succès. Matricule de connexion : ${member.matricule} - Mot de passe temporaire : ${tempPassword}`
-    });
-
+    res.json({ operations });
   } catch (error) {
-    console.error('Error creating member with login:', error);
-    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
-  }
-});
-
-// POST /members/:id/add-login - Ajouter identifiants de connexion à un membre existant
-app.post('/members/:id/add-login', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    const { id } = req.params;
-    const { matricule, role, hasInternalAccess = true } = req.body;
-
-    // Validation du matricule
-    if (!matricule) {
-      return res.status(400).json({ error: 'Matricule requis' });
-    }
-    
-    // Remplacer par une validation plus flexible :
-    if (!/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
-    }
-
-    // Vérifier que le membre existe
-    const member = await prisma.member.findUnique({ where: { id } });
-    if (!member) {
-      return res.status(404).json({ error: 'Membre non trouvé' });
-    }
-
-    // Vérifier que le matricule n'est pas déjà utilisé
-    const existingMatricule = await prisma.member.findFirst({
-      where: { matricule, id: { not: id } }
-    });
-    if (existingMatricule) {
-      return res.status(400).json({ error: 'Matricule déjà utilisé' });
-    }
-
-    // Générer mot de passe temporaire
-    const tempPassword = generateTemporaryPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-
-    // Mettre à jour le membre
-    const updatedMember = await prisma.member.update({
-      where: { id },
-      data: {
-        matricule,
-        role: role || member.role,
-        hasInternalAccess,
-        loginEnabled: true,
-        temporaryPassword: hashedPassword,
-        mustChangePassword: true,
-        passwordChangedAt: new Date()
-      }
-    });
-
-    res.status(200).json({
-      member: transformMember(updatedMember),
-      temporaryPassword: tempPassword,
-      message: `Identifiants créés pour ${updatedMember.firstName} ${updatedMember.lastName}. Mot de passe temporaire : ${tempPassword}`
-    });
-
-  } catch (error) {
-    console.error('Error adding login to member:', error);
-    res.status(500).json({ error: 'Erreur lors de l\'ajout des identifiants' });
-  }
-});
-
-// GET /members - Liste tous les membres (admins seulement)
-app.get('/members', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    // Vérifier que l'utilisateur est admin ou a les droits de voir les membres
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    const members = await prisma.member.findMany({
-      orderBy: { lastName: 'asc' },
-      select: {
-        id: true,
-        memberNumber: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        matricule: true,
-        membershipStatus: true,
-        membershipType: true,
-        role: true,
-        hasInternalAccess: true,
-        hasExternalAccess: true,
-        joinDate: true,
-        renewalDate: true
-      }
-    });
-
-    res.json(members);
-
-  } catch (error) {
-    console.error('Error fetching members:', error);
-    res.status(500).json({ error: 'Erreur lors de la récupération des membres' });
-  }
-});
-
-// POST /members/create-with-login - Créer un adhérent avec identifiants de connexion
-app.post('/members/create-with-login', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  
-  try {
-    // Vérifier que l'utilisateur est admin
-    if (req.user.role !== 'ADMIN' && !req.user.roles?.includes('ADMIN')) {
-      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-    }
-
-    const {
-      firstName,
-      lastName,
-      email,
-      matricule,
-      membershipType = 'STANDARD',
-      membershipStatus = 'ACTIVE',
-      role = 'MEMBER',
-      hasInternalAccess = false,
-      hasExternalAccess = false,
-      phone,
-      address,
-      city,
-      postalCode,
-      birthDate,
-      paymentAmount,
-      paymentMethod = 'CASH',
-      notes,
-      newsletter = true
-    } = req.body;
-
-    // Validation
-    if (!firstName || !lastName || !email) {
-      return res.status(400).json({ error: 'Prénom, nom et email requis' });
-    }
-
-    // Validation du matricule avec nouveau format
-    if (!matricule) {
-      return res.status(400).json({ error: 'Matricule requis' });
-    }
-    
-    // Valider le format prénom.nom (lettres minuscules uniquement)
-    if (!/^[a-z][a-z0-9]*\.[a-z][a-z0-9]*$/.test(matricule)) {
-      return res.status(400).json({ error: 'Matricule doit être au format prénom.nom (ex: w.belaidi) - lettres minuscules uniquement' });
-    }
-
-    // Vérifier unicité email et matricule
-    const existingMember = await prisma.member.findFirst({
-      where: {
-        OR: [
-          { email },
-          { matricule }
-        ]
-      }
-    });
-
-    if (existingMember) {
-      return res.status(400).json({ 
-        error: existingMember.email === email ? 'Email déjà utilisé' : 'Matricule déjà utilisé' 
-      });
-    }
-
-    // Générer mot de passe temporaire
-    const tempPassword = generateTemporaryPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-
-    // Générer numéro d'adhérent unique
-    const year = new Date().getFullYear();
-    const count = await prisma.member.count() + 1;
-    const memberNumber = `${year}-${count.toString().padStart(4, '0')}`;
-
-    // Créer l'adhérent
-    const member = await prisma.member.create({
-      data: {
-        memberNumber,
-        firstName,
-        lastName,
-        email,
-        matricule,
-        membershipType,
-        membershipStatus,
-        role,
-        hasInternalAccess,
-        hasExternalAccess,
-        loginEnabled: true,
-        temporaryPassword: hashedPassword,
-        mustChangePassword: true,
-        passwordChangedAt: new Date(),
-        phone,
-        address,
-        city,
-        postalCode,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
-        paymentMethod,
-        newsletter,
-        notes,
-        createdBy: req.user?.username || 'system',
-        lastPaymentDate: paymentAmount ? new Date() : null,
-        // Assurer que les champs essentiels sont bien remplis
-        joinDate: new Date(),
-        renewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 an
-      }
-    });
-
-    // Retourner les bonnes informations
-    res.status(201).json({
-      member: {
-        id: member.id,
-        memberNumber: member.memberNumber,
-        matricule: member.matricule, // Identifiant de connexion
-        firstName: member.firstName,
-        lastName: member.lastName,
-        email: member.email,
-        membershipType: member.membershipType,
-        membershipStatus: member.membershipStatus,
-        role: member.role,
-        hasInternalAccess: member.hasInternalAccess,
-        hasExternalAccess: member.hasExternalAccess,
-        loginEnabled: member.loginEnabled,
-        createdAt: member.createdAt
-      },
-      loginCredentials: {
-        matricule: member.matricule, // Identifiant de connexion
-        temporaryPassword: tempPassword // Mot de passe temporaire
-      },
-      message: `Adhérent créé avec succès. Matricule de connexion : ${member.matricule} - Mot de passe temporaire : ${tempPassword}`
-    });
-
-  } catch (error) {
-    console.error('Error creating member with login:', error);
-    res.status(500).json({ error: 'Erreur lors de la création de l\'adhérent' });
-  }
-});
-
-// Route pour sauvegarder les paramètres HelloAsso d'un événement
-app.post('/api/events/:id/helloasso', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-
-  try {
-    const { id } = req.params;
-    const { eventUrl, organizationSlug, eventSlug, formId } = req.body;
-
-    // Vérifier que l'événement existe
-    const event = await prisma.event.findUnique({
-      where: { id }
-    });
-
-    if (!event) {
-      return res.status(404).json({ error: 'Événement non trouvé' });
-    }
-
-    // Mettre à jour les paramètres HelloAsso
-    const updatedEvent = await prisma.event.update({
-      where: { id },
-      data: {
-        helloAssoUrl: eventUrl,
-        helloAssoOrg: organizationSlug,
-        helloAssoEvent: eventSlug,
-        helloAssoFormId: formId,
-        updatedAt: new Date()
-      }
-    });
-
-    res.json({
-      message: 'Paramètres HelloAsso mis à jour',
-      event: updatedEvent
-    });
-
-  } catch (error) {
-    console.error('Error updating HelloAsso settings:', error);
-    res.status(500).json({ error: 'Erreur lors de la mise à jour des paramètres HelloAsso' });
-  }
-});
-
-// Route pour récupérer les participants HelloAsso d'un événement
-app.get('/api/events/:id/helloasso/participants', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-
-  try {
-    const { id } = req.params;
-
-    // Récupérer l'événement avec ses paramètres HelloAsso
-    const event = await prisma.event.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        title: true,
-        helloAssoUrl: true,
-        helloAssoOrg: true,
-        helloAssoEvent: true,
-        helloAssoFormId: true
-      }
-    });
-
-    if (!event) {
-      return res.status(404).json({ error: 'Événement non trouvé' });
-    }
-
-    if (!event.helloAssoOrg || !event.helloAssoEvent) {
-      return res.status(400).json({ error: 'Paramètres HelloAsso non configurés pour cet événement' });
-    }
-
-    // Ici, vous pourriez implémenter la logique côté serveur pour récupérer les participants HelloAsso
-    // Pour l'instant, on retourne les paramètres pour que le client fasse l'appel
-
-    res.json({
-      event: {
-        id: event.id,
-        title: event.title,
-        helloAssoOrg: event.helloAssoOrg,
-        helloAssoEvent: event.helloAssoEvent,
-        helloAssoUrl: event.helloAssoUrl
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching HelloAsso participants:', error);
-    res.status(500).json({ error: 'Erreur lors de la récupération des participants HelloAsso' });
-  }
-});
-
-// ---------- Retromail (public) ----------
-const RETROMAIL_DIR = path.join(process.cwd(), 'retromail');
-
-// Middleware pour créer le dossier Retromail s'il n'existe pas
-app.use(async (req, res, next) => {
-  try {
-    await fs.mkdir(RETROMAIL_DIR, { recursive: true });
-    next();
-  } catch (e) {
-    console.error('Error creating Retromail directory:', e);
+    console.error('Erreur récupération opérations programmées:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-async function retroMailPublish({ title, summary, body, tags = [], audience = 'ALL', from = 'system', attachments = [] }) {
-  const ts = new Date();
-  const stamp = ts.toISOString().replace(/[-:]/g, '').replace(/\..+/, '');
-  const baseName = `${stamp}-${(title || 'message').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
-  const jsonName = `${baseName}.json`;
-
-  const json = { id: baseName, date: ts.toISOString(), title, summary: summary || '', body: body || '', from, tags, audience, attachments };
-  await fs.writeFile(path.join(RETROMAIL_DIR, jsonName), JSON.stringify(json, null, 2), 'utf-8');
-  return { id: baseName, jsonName };
-}
-
-async function retroMailSavePdf(buffer, suggestedName) {
-  const safe = (suggestedName || `document-${Date.now()}`).replace(/[^a-z0-9._-]/gi, '_');
-  const pdfName = safe.endsWith('.pdf') ? safe : `${safe}.pdf`;
-  await fs.writeFile(path.join(RETROMAIL_DIR, pdfName), buffer);
-  return { fileName: pdfName, url: `/retromail/${pdfName}` };
-}
-
-// Static pour pièces jointes et PDFs
-app.use('/retromail', express.static(RETROMAIL_DIR, { fallthrough: true }));
-
-// Liste les messages JSON
-app.get('/retromail/list', async (_req, res) => {
-  try {
-    const entries = await fs.readdir(RETROMAIL_DIR, { withFileTypes: true });
-    const jsonFiles = entries.filter(d => d.isFile() && d.name.toLowerCase().endsWith('.json'))
-      .map(d => d.name).sort();
-    res.json(jsonFiles);
-  } catch (e) {
-    console.warn('retromail/list error:', e);
-    res.json([]);
-  }
-});
-
-// Lire un message JSON
-app.get('/retromail/:filename', async (req, res, next) => {
-  try {
-    const fn = req.params.filename || '';
-    if (!/^[a-zA-Z0-9._-]+$/.test(fn)) return res.status(400).json({ error: 'Nom de fichier invalide' });
-    if (!fn.toLowerCase().endsWith('.json')) return next(); // laisser la main au static (pdf, images)
-    const filePath = path.join(RETROMAIL_DIR, fn);
-    const buf = await fs.readFile(filePath, 'utf-8');
-    res.json(JSON.parse(buf));
-  } catch (e) {
-    if (e.code === 'ENOENT') return res.status(404).json({ error: 'Message introuvable' });
-    console.error('retromail read error:', e);
-    res.status(500).json({ error: 'Erreur lecture message' });
-  }
-});
-
-// ...placer ceci au-dessus des routes /api/stocks/:id/movement...
-
-async function generateMovementPDF({ stock, movement, actor, member }) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 36 });
-    const chunks = [];
-    doc.on('data', c => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    doc.fontSize(18).text('Fiche Mouvement de Stock', { align: 'center' }).moveDown(0.5);
-    doc.fontSize(10)
-      .text(`Date: ${new Date().toLocaleString('fr-FR')}`)
-      .text(`Acteur: ${actor?.display || '-'}`)
-      .text(`Membre: ${member?.fullName || '-'} (${member?.email || '-'})`)
-      .moveDown();
-
-    doc.fontSize(14).text('Article', { underline: true }).moveDown(0.2);
-    doc.fontSize(11)
-      .text(`Nom: ${stock?.name || '-'}`)
-      .text(`Référence: ${stock?.reference || '-'}`)
-      .text(`Catégorie: ${stock?.category || '-'}`)
-      .text(`Emplacement: ${stock?.location || '-'}`)
-      .moveDown();
-
-    doc.fontSize(14).text('Mouvement', { underline: true }).moveDown(0.2);
-    doc.fontSize(11)
-      .text(`Type: ${movement?.type || '-'}`)
-      .text(`Quantité: ${movement?.quantity ?? '-'}`)
-      .text(`Quantité précédente: ${movement?.previousQuantity ?? '-'}`)
-      .text(`Nouvelle quantité: ${movement?.newQuantity ?? '-'}`)
-      .text(`Raison: ${movement?.reason || '-'}`)
-      .text(`Notes: ${movement?.notes || '-'}`)
-      .moveDown();
-
-    doc.moveDown().fontSize(9).fillColor('#666')
-      .text('Document généré automatiquement par MyRBE • RBE', { align: 'center' });
-    doc.end();
-  });
-}
-
-async function sendMovementEmail({ stock, movement, actor, member }) {
-  if (!mailer) return; // SMTP non configuré
-  const subject = `Mouvement ${movement.type} – ${stock.name} (${stock.reference || 'n/r'})`;
-  const pdfBuffer = await generateMovementPDF({ stock, movement, actor, member });
-
-  const to = [];
-  const cc = [];
-  if (member?.email) to.push(member.email);
-  if (process.env.PRESIDENT_EMAIL) cc.push(process.env.PRESIDENT_EMAIL);
-  if (to.length === 0 && cc.length === 0 && process.env.SMTP_USER) cc.push(process.env.SMTP_USER);
-
-  const textBody =
-    `Bonjour,\n\n` +
-    `Un mouvement de stock a été enregistré:\n` +
-    `- Article: ${stock.name} (${stock.reference || 'n/r'})\n` +
-    `- Type: ${movement.type}\n` +
-    `- Quantité: ${movement.quantity}\n` +
-    `- Ancienne quantité: ${movement.previousQuantity}\n` +
-    `- Nouvelle quantité: ${movement.newQuantity}\n` +
-    `- Raison: ${movement.reason || '-'}\n` +
-    `- Notes: ${movement.notes || '-'}\n` +
-    `- Par: ${actor?.display || '-'}\n\n` +
-    `Le PDF récapitulatif est joint en pièce-jointe.\n\n` +
-    `— MyRBE`;
-
-  await mailer.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to.join(', '),
-    cc: cc.join(', '),
-    subject,
-    text: textBody,
-    attachments: [{ filename: `mouvement-${movement.id || Date.now()}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }]
-  });
-}
-
-// Historique (plural)
-app.get('/api/stocks/:id/movements', requireAuth, async (req, res) => {
+app.post('/finance/scheduled-operations', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const stockId = parseInt(req.params.id, 10);
-    const stock = await prisma.stock.findUnique({ where: { id: stockId } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    const movements = await prisma.stockMovement.findMany({
-      where: { stockId },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json(movements);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch movements' });
-  }
-});
-
-// Compat GET (singulier)
-app.get('/api/stocks/:id/movement', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const stockId = parseInt(req.params.id, 10);
-    const stock = await prisma.stock.findUnique({ where: { id: stockId } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    const movements = await prisma.stockMovement.findMany({
-      where: { stockId },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json(movements);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch movements' });
-  }
-});
-
-app.post('/api/stocks/:id/movement', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const stockId = parseInt(req.params.id, 10);
-    const { type, quantity, reason, notes } = req.body || {};
-
-    if (!['IN','OUT','ADJUSTMENT'].includes(type)) return res.status(400).json({ error: 'Type invalide' });
-    const qty = parseInt(quantity, 10);
-    if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Quantité invalide' });
-
-    const stock = await prisma.stock.findUnique({ where: { id: stockId } });
-    if (!stock) return res.status(404).json({ error: 'Stock not found' });
-
-    let newQuantity = stock.quantity;
-    if (type === 'IN') newQuantity = stock.quantity + qty;
-    else if (type === 'OUT') newQuantity = stock.quantity - qty;
-    else if (type === 'ADJUSTMENT') newQuantity = qty;
-
-    const actorId = req.user?.username || req.user?.sub || 'system';
-    const actorDisplay = actorId;
-
-    const result = await prisma.$transaction(async (tx) => {
-      const movement = await tx.stockMovement.create({
-        data: {
-          stockId,
-          type,
-          quantity: type === 'ADJUSTMENT' ? Math.abs(newQuantity - stock.quantity) : qty,
-          previousQuantity: stock.quantity,
-          newQuantity,
-          reason: reason || null,
-          notes: notes || null,
-          userId: actorId
-        }
-      });
-
-      const updated = await tx.stock.update({
-        where: { id: stockId },
-        data: {
-          quantity: newQuantity,
-          lastRestockDate: type === 'IN' ? new Date() : stock.lastRestockDate
-        }
-      });
-
-      return { movement, updatedStock: updated };
-    });
-
-    // Infos membre pour l'email/PDF
-    let memberInfo = null;
-    if (req.user?.type === 'member' && req.user?.userId) {
-      try {
-        const m = await prisma.member.findUnique({ where: { id: req.user.userId } });
-        if (m) memberInfo = { email: m.email, fullName: `${m.firstName} ${m.lastName}`.trim() };
-      } catch {}
-    }
-
-    const pdfBuffer = await generateMovementPDF({
-      stock,
-      movement: result.movement,
-      actor: { display: actorDisplay },
-      member: memberInfo
-    });
-
-    const pdfFile = await retroMailSavePdf(
-      pdfBuffer,
-      `mouvement-${result.movement.id}-${stock.reference || stock.id}`
-    );
-
-    await retroMailPublish({
-      title: `Mouvement ${type} – ${stock.name} (${stock.reference || 'n/r'})`,
-      summary: `Mouvement ${type}: ${qty} • après: ${result.movement.newQuantity}`,
-      body:
-        `Article: ${stock.name} (${stock.reference || 'n/r'})\n` +
-        `Type: ${type}\n` +
-        `Quantité: ${qty}\n` +
-        `Avant: ${result.movement.previousQuantity}\n` +
-        `Après: ${result.movement.newQuantity}\n` +
-        `Raison: ${reason || '-'}\n` +
-        `Notes: ${notes || '-'}\n` +
-        `Par: ${actorDisplay}\n`,
-      tags: ['stock','movement'],
-      audience: 'ALL',
-      from: actorDisplay,
-      attachments: [{ name: pdfFile.fileName, url: pdfFile.url }]
-    });
-
-    // Email optionnel (existant)
-    sendMovementEmail({
-      stock: result.updatedStock,
-      movement: result.movement,
-      actor: { display: actorDisplay },
-      member: memberInfo
-    }).catch(err => console.error('Erreur envoi email mouvement:', err));
-
-    res.json({ movement: result.movement, stock: transformStock(result.updatedStock) });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Create movement failed' });
-  }
-});
-
-// ---------- Finance Management ----------
-// Statistiques financières
-app.get('/finance/stats', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const now = new Date();
-    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { type, description, amount, dueDate, category, recurring, notes } = req.body;
     
-    // Récupérer le solde bancaire configuré
-    let bankBalance = null;
-    try {
-      const balanceRecord = await prisma.financeSettings.findFirst({
-        where: { key: 'bank_balance' }
-      });
-      bankBalance = balanceRecord ? parseFloat(balanceRecord.value) : null;
-    } catch {
-      // Table financeSettings n'existe pas encore, on utilise une valeur par défaut
-      bankBalance = 0;
-    }
-
-    // Calcul des recettes du mois (adhésions principalement)
-    const activeMembers = await prisma.member.count({
-      where: { membershipStatus: 'ACTIVE' }
-    });
-    
-    const monthlyRevenue = activeMembers * 60; // 60€ par adhésion
-
-    // Récupérer les dépenses programmées du mois
-    let monthlyExpenses = 0;
-    try {
-      const expenses = await prisma.scheduledExpense.findMany({
-        where: {
-          scheduledDate: {
-            gte: thisMonth,
-            lt: new Date(now.getFullYear(), now.getMonth() + 1, 1)
-          }
-        }
-      });
-      monthlyExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-    } catch {
-      // Table scheduledExpense n'existe pas encore
-      monthlyExpenses = 0;
-    }
-    
-    const currentBalance = bankBalance || monthlyRevenue;
-    const membershipRevenue = activeMembers * 60;
-    
-    // Calcul des statistiques vs mois précédent
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthMembers = await prisma.member.count({
-      where: { 
-        membershipStatus: 'ACTIVE',
-        createdAt: { lte: thisMonth }
+    const operation = await prisma.scheduledOperation.create({
+      data: {
+        type,
+        description,
+        amount: parseFloat(amount),
+        dueDate: dueDate ? new Date(dueDate) : null,
+        category,
+        recurring: recurring || 'none',
+        notes,
+        createdBy: req.user?.email || 'system'
       }
     });
     
-    const revenueGrowth = lastMonthMembers > 0 
-      ? ((activeMembers - lastMonthMembers) / lastMonthMembers * 100).toFixed(1)
-      : '0.0';
-
-    res.json({
-      monthlyRevenue: monthlyRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-      monthlyExpenses: monthlyExpenses.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-      currentBalance: currentBalance.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-      membershipRevenue: membershipRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-      bankBalance: bankBalance,
-      activeMembers,
-      revenueGrowth: parseFloat(revenueGrowth),
-      stats: {
-        totalMembers: await prisma.member.count(),
-        activeMembers,
-        pendingMembers: await prisma.member.count({ where: { membershipStatus: 'PENDING' } }),
-        expiredMembers: await prisma.member.count({ where: { membershipStatus: 'EXPIRED' } })
-      }
-    });
+    res.json(operation);
   } catch (error) {
-    console.error('Finance stats error:', error);
-    res.status(500).json({ error: 'Erreur calcul statistiques financières' });
+    console.error('Erreur création opération programmée:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// Définir/Modifier le solde bancaire
-app.post('/finance/bank-balance', requireAuth, async (req, res) => {
+// ========== ENDPOINTS RETROREPORTS ==========
+app.get('/admin/retro-reports', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    const { amount } = req.body;
-    
-    if (typeof amount !== 'number' || isNaN(amount)) {
-      return res.status(400).json({ error: 'Montant invalide' });
-    }
-
-    // Essayer de créer/mettre à jour dans financeSettings
-    try {
-      await prisma.financeSettings.upsert({
-        where: { key: 'bank_balance' },
-        update: { 
-          value: amount.toString(),
-          updatedAt: new Date(),
-          updatedBy: req.user?.username || 'system'
-        },
-        create: {
-          key: 'bank_balance',
-          value: amount.toString(),
-          description: 'Solde actuel du compte bancaire',
-          createdBy: req.user?.username || 'system'
+    const reports = await prisma.retroReport.findMany({
+      include: {
+        comments: {
+          orderBy: { createdAt: 'desc' }
         }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ reports });
+  } catch (error) {
+    console.error('Erreur récupération RétroReports:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/admin/retro-reports', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { title, description, category, priority, type } = req.body;
+    
+    const report = await prisma.retroReport.create({
+      data: {
+        title,
+        description,
+        category,
+        priority: priority || 'medium',
+        type: type || 'bug',
+        status: 'open',
+        createdBy: req.user?.email || 'system'
+      }
+    });
+    
+    res.json(report);
+  } catch (error) {
+    console.error('Erreur création RétroReport:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/admin/retro-reports/:id/comments', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const { message, status } = req.body;
+    
+    // Créer le commentaire
+    const comment = await prisma.retroReportComment.create({
+      data: {
+        reportId: id,
+        message,
+        author: req.user?.email || 'system'
+      }
+    });
+    
+    // Mettre à jour le statut si fourni
+    if (status) {
+      await prisma.retroReport.update({
+        where: { id },
+        data: { status }
       });
-    } catch (tableError) {
-      // Si la table n'existe pas, on peut la créer avec un raw query ou l'ignorer
-      console.warn('Table financeSettings non disponible, stockage temporaire du solde');
-      // Pour l'instant, on simule le succès
+    }
+    
+    res.json(comment);
+  } catch (error) {
+    console.error('Erreur ajout commentaire RétroReport:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ========== ENDPOINT D'INITIALISATION RETROREPORTS ==========
+app.post('/admin/retro-reports/setup', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    console.log('🚀 Initialisation RétroReports...');
+
+    // Nettoyage optionnel des données existantes
+    const { resetData } = req.body;
+    if (resetData) {
+      await prisma.retroReportComment.deleteMany({});
+      await prisma.retroReport.deleteMany({});
+      console.log('🗑️ Données existantes supprimées');
     }
 
+    // Création des tickets d'exemple
+    const sampleReports = [
+      {
+        title: 'Problème de connexion base de données',
+        description: 'La connexion à la base de données se ferme parfois de manière inattendue lors des opérations longues sur les membres.',
+        category: 'Technique',
+        priority: 'high',
+        type: 'bug',
+        status: 'open',
+        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+      },
+      {
+        title: 'Amélioration interface gestion membres',
+        description: 'L\'interface de gestion des membres nécessite une refonte complète pour améliorer l\'expérience utilisateur.',
+        category: 'Interface',
+        priority: 'critical',
+        type: 'feature',
+        status: 'open',
+        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+      },
+      {
+        title: 'Optimisation des requêtes véhicules',
+        description: 'Les requêtes sur la table des véhicules sont lentes avec plus de 1000 entrées.',
+        category: 'Performance',
+        priority: 'medium',
+        type: 'performance',
+        status: 'in_progress',
+        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+      },
+      {
+        title: 'Mise à jour sécurité JWT',
+        description: 'Les tokens JWT doivent être mis à jour vers une version plus sécurisée.',
+        category: 'Sécurité',
+        priority: 'high',
+        type: 'security',
+        status: 'open',
+        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+      }
+    ];
+
+    const createdReports = [];
+    for (const report of sampleReports) {
+      const created = await prisma.retroReport.create({
+        data: report,
+        include: { comments: true }
+      });
+      createdReports.push(created);
+    }
+
+    // Ajout de commentaires d'exemple
+    await prisma.retroReportComment.create({
+      data: {
+        reportId: createdReports[0].id,
+        message: 'J\'ai identifié que le problème vient du timeout de connexion configuré trop bas. Investigation en cours.',
+        author: req.user?.email || 'dev@retrobus-essonne.fr'
+      }
+    });
+
+    await prisma.retroReportComment.create({
+      data: {
+        reportId: createdReports[2].id,
+        message: 'Optimisation terminée. Performance améliorée de 70%. Tests en cours.',
+        author: req.user?.email || 'performance@retrobus-essonne.fr'
+      }
+    });
+
+    console.log(`✅ ${createdReports.length} tickets créés avec succès`);
+    
     res.json({
       success: true,
-      bankBalance: amount,
-      formatted: amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-      message: 'Solde bancaire mis à jour avec succès'
-    });
-  } catch (error) {
-    console.error('Update bank balance error:', error);
-    res.status(500).json({ error: 'Erreur mise à jour solde bancaire' });
-  }
-});
-
-// Récupérer les dépenses programmées
-app.get('/finance/scheduled-expenses', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { months = 6 } = req.query;
-    const now = new Date();
-    const endDate = new Date(now.getFullYear(), now.getMonth() + parseInt(months), 1);
-
-    let expenses = [];
-    try {
-      expenses = await prisma.scheduledExpense.findMany({
-        where: {
-          scheduledDate: {
-            gte: now,
-            lt: endDate
-          }
-        },
-        orderBy: { scheduledDate: 'asc' }
-      });
-    } catch (tableError) {
-      console.warn('Table scheduledExpense non disponible');
-      expenses = [];
-    }
-
-    res.json({ expenses });
-  } catch (error) {
-    console.error('Scheduled expenses error:', error);
-    res.status(500).json({ error: 'Erreur récupération dépenses programmées' });
-  }
-});
-
-// Créer une dépense programmée
-app.post('/finance/scheduled-expenses', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { description, amount, scheduledDate, category, recurring } = req.body;
-
-    if (!description || !amount || !scheduledDate) {
-      return res.status(400).json({ error: 'Description, montant et date requis' });
-    }
-
-    const expense = {
-      description,
-      amount: parseFloat(amount),
-      scheduledDate: new Date(scheduledDate),
-      category: category || 'autres',
-      recurring: recurring || false,
-      createdBy: req.user?.username || 'system',
-      createdAt: new Date()
-    };
-
-    try {
-      const created = await prisma.scheduledExpense.create({ data: expense });
-      res.status(201).json(created);
-    } catch (tableError) {
-      console.warn('Table scheduledExpense non disponible, retour simulé');
-      res.status(201).json({ ...expense, id: Date.now() });
-    }
-  } catch (error) {
-    console.error('Create scheduled expense error:', error);
-    res.status(500).json({ error: 'Erreur création dépense programmée' });
-  }
-});
-
-// Mettre à jour une dépense programmée
-app.put('/finance/scheduled-expenses/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-    const { description, amount, scheduledDate, category, recurring } = req.body;
-
-    const updateData = {};
-    if (description !== undefined) updateData.description = description;
-    if (amount !== undefined) updateData.amount = parseFloat(amount);
-    if (scheduledDate !== undefined) updateData.scheduledDate = new Date(scheduledDate);
-    if (category !== undefined) updateData.category = category;
-    if (recurring !== undefined) updateData.recurring = recurring;
-    updateData.updatedAt = new Date();
-
-    try {
-      const updated = await prisma.scheduledExpense.update({
-        where: { id: parseInt(id) },
-        data: updateData
-      });
-      res.json(updated);
-    } catch (tableError) {
-      console.warn('Table scheduledExpense non disponible');
-      res.json({ id: parseInt(id), ...updateData });
-    }
-  } catch (error) {
-    console.error('Update scheduled expense error:', error);
-    res.status(500).json({ error: 'Erreur mise à jour dépense programmée' });
-  }
-});
-
-// Supprimer une dépense programmée
-app.delete('/finance/scheduled-expenses/:id', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { id } = req.params;
-
-    try {
-      await prisma.scheduledExpense.delete({
-        where: { id: parseInt(id) }
-      });
-    } catch (tableError) {
-      console.warn('Table scheduledExpense non disponible');
-    }
-
-    res.json({ success: true, message: 'Dépense programmée supprimée' });
-  } catch (error) {
-    console.error('Delete scheduled expense error:', error);
-    res.status(500).json({ error: 'Erreur suppression dépense programmée' });
-  }
-});
-
-// Liste des transactions financières (existant, à garder)
-app.get('/finance/transactions', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { page = 1, limit = 50, type, category, startDate, endDate } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-
-    // Pour l'instant, on génère des transactions basées sur les adhésions
-    const members = await prisma.member.findMany({
-      where: {
-        membershipStatus: 'ACTIVE',
-        lastPaymentDate: { not: null }
-      },
-      orderBy: { lastPaymentDate: 'desc' },
-      take: parseInt(limit),
-      skip: offset
+      message: `RétroReports initialisé avec ${createdReports.length} tickets`,
+      reports: createdReports
     });
 
-    const transactions = members.map(member => ({
-      id: `member-${member.id}`,
-      type: 'recette',
-      amount: member.paymentAmount || 60,
-      description: `Adhésion annuelle - ${member.firstName} ${member.lastName}`,
-      category: 'adhesions',
-      date: member.lastPaymentDate || member.createdAt,
-      created_by: 'system',
-      member: {
-        id: member.id,
-        firstName: member.firstName,
-        lastName: member.lastName,
-        memberNumber: member.memberNumber
-      }
-    }));
-
-    res.json({
-      transactions,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: await prisma.member.count({ where: { membershipStatus: 'ACTIVE' } })
-      }
-    });
   } catch (error) {
-    console.error('Finance transactions error:', error);
-    res.status(500).json({ error: 'Erreur récupération transactions' });
-  }
-});
-
-// Créer une nouvelle transaction (existant, à garder)
-app.post('/finance/transactions', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const { type, amount, description, category, date } = req.body;
-
-    if (!type || !amount || !description) {
-      return res.status(400).json({ error: 'Type, montant et description requis' });
-    }
-
-    const transaction = {
-      id: `tx-${Date.now()}`,
-      type,
-      amount: parseFloat(amount),
-      description,
-      category: category || 'autres',
-      date: date ? new Date(date) : new Date(),
-      created_by: req.user?.username || 'system',
-      created_at: new Date()
-    };
-
-    console.log('Nouvelle transaction:', transaction);
-    res.status(201).json(transaction);
-  } catch (error) {
-    console.error('Create transaction error:', error);
-    res.status(500).json({ error: 'Erreur création transaction' });
-  }
-});
-
-// Synchroniser avec les adhésions (existant, à garder)
-app.post('/finance/sync/memberships', requireAuth, async (req, res) => {
-  if (!ensureDB(res)) return;
-  try {
-    const activeMembers = await prisma.member.findMany({
-      where: { 
-        membershipStatus: 'ACTIVE',
-        lastPaymentDate: { not: null }
-      }
-    });
-
-    const syncedTransactions = activeMembers.map(member => ({
-      id: `sync-${member.id}`,
-      type: 'recette',
-      amount: member.paymentAmount || 60,
-      description: `Synchronisation adhésion - ${member.firstName} ${member.lastName}`,
-      category: 'adhesions',
-      date: member.lastPaymentDate,
-      synced: true
-    }));
-
-    res.json({
-      message: 'Synchronisation terminée',
-      synchronized: syncedTransactions.length,
-      transactions: syncedTransactions
-    });
-  } catch (error) {
-    console.error('Sync memberships error:', error);
-    res.status(500).json({ error: 'Erreur synchronisation adhésions' });
+    console.error('Erreur initialisation RétroReports:', error);
+    res.status(500).json({ error: 'Erreur serveur lors de l\'initialisation' });
   }
 });
 

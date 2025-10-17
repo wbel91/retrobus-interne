@@ -1,27 +1,25 @@
 import React, { useState, useEffect } from "react";
 import {
-  Box, Grid, Card, CardBody, CardHeader, Heading, Text, Button,
-  Input, Select, NumberInput, NumberInputField, NumberInputStepper,
-  NumberIncrementStepper, NumberDecrementStepper, Stat, StatLabel,
-  StatNumber, StatHelpText, StatArrow, VStack, HStack, Badge,
-  Table, Thead, Tbody, Tr, Th, Td, useToast, Modal, ModalOverlay,
+  Grid, VStack, HStack, Badge, useToast, Modal, ModalOverlay,
   ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
-  useDisclosure, FormControl, FormLabel, Textarea, Divider, Flex,
-  Icon, SimpleGrid, Progress, Alert, AlertIcon, Container,
-  InputGroup, InputLeftElement, InputRightElement, Tag, TagLabel,
+  useDisclosure, FormControl, FormLabel, Textarea, 
+  Alert, AlertIcon, InputGroup, InputLeftElement, 
   ButtonGroup, IconButton, Menu, MenuButton, MenuList, MenuItem,
-  useColorModeValue, Spinner, Tabs, TabList, TabPanels, Tab, TabPanel,
-  Switch, Checkbox
+  Spinner, Tabs, TabList, TabPanels, Tab, TabPanel,
+  Switch, Table, Thead, Tbody, Tr, Th, Td, Text, Button, Input, Select
 } from "@chakra-ui/react";
 import {
   FiDollarSign, FiTrendingUp, FiTrendingDown, FiPlus, FiMinus,
   FiPieChart, FiBarChart, FiCalendar, FiCreditCard, FiDownload,
   FiUpload, FiEdit3, FiTrash2, FiMoreHorizontal, FiCheck,
   FiX, FiRefreshCw, FiEye, FiFilter, FiSearch, FiUsers, FiSave,
-  FiSettings, FiClock, FiFileText
+  FiClock, FiSettings, FiRepeat
 } from "react-icons/fi";
 import { useUser } from '../context/UserContext';
 import { financeAPI } from '../api/finance';
+import PageLayout from '../components/Layout/PageLayout';
+import StatsGrid from '../components/Layout/StatsGrid';
+import ModernCard from '../components/Layout/ModernCard';
 
 // Composant pour la saisie d'argent innovante
 const MoneyInput = ({ value, onChange, placeholder = "0,00 €", size = "md", ...props }) => {
@@ -94,132 +92,67 @@ const MoneyInput = ({ value, onChange, placeholder = "0,00 €", size = "md", ..
   );
 };
 
-// Composant pour afficher les statistiques financières
+// Composant pour afficher les statistiques financières modernes
 const FinanceStats = ({ data, loading }) => {
-  const cardBg = useColorModeValue("white", "gray.800");
-  
-  if (loading) {
-    return (
-      <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
-        {[1, 2, 3, 4].map(i => (
-          <Card key={i} bg={cardBg}>
-            <CardBody>
-              <Stat>
-                <StatLabel color="gray.600">Chargement...</StatLabel>
-                <StatNumber><Spinner size="sm" /></StatNumber>
-              </Stat>
-            </CardBody>
-          </Card>
-        ))}
-      </SimpleGrid>
-    );
-  }
-  
-  return (
-    <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
-      <Card bg={cardBg}>
-        <CardBody>
-          <Stat>
-            <StatLabel color="gray.600">Solde bancaire</StatLabel>
-            <StatNumber color="blue.500">
-              <HStack>
-                <Icon as={FiCreditCard} />
-                <Text>{data?.currentBalance || "0,00 €"}</Text>
-              </HStack>
-            </StatNumber>
-            <StatHelpText>
-              {data?.bankBalance !== null ? 'Configuré' : 'À définir'}
-            </StatHelpText>
-          </Stat>
-        </CardBody>
-      </Card>
+  const stats = [
+    {
+      label: "Recettes du mois",
+      value: data?.monthlyRevenue || "0,00 €",
+      icon: FiTrendingUp,
+      color: "success",
+      change: data?.revenueGrowth > 0 ? {
+        type: "increase",
+        value: `+${data?.revenueGrowth}% vs mois dernier`
+      } : undefined
+    },
+    {
+      label: "Dépenses du mois", 
+      value: data?.monthlyExpenses || "0,00 €",
+      icon: FiTrendingDown,
+      color: "warning",
+      change: { type: "decrease", value: "Optimisé ce mois" }
+    },
+    {
+      label: "Solde bancaire",
+      value: data?.currentBalance || "0,00 €", 
+      icon: FiBarChart,
+      color: "brand"
+    },
+    {
+      label: "Adhésions encaissées",
+      value: `${data?.activeMembers || 0} membres`,
+      icon: FiUsers,
+      color: "purple",
+      change: { type: "increase", value: data?.membershipRevenue || "0,00 €" }
+    }
+  ];
 
-      <Card bg={cardBg}>
-        <CardBody>
-          <Stat>
-            <StatLabel color="gray.600">Recettes du mois</StatLabel>
-            <StatNumber color="green.500">
-              <HStack>
-                <Icon as={FiTrendingUp} />
-                <Text>{data?.monthlyRevenue || "0,00 €"}</Text>
-              </HStack>
-            </StatNumber>
-            <StatHelpText>
-              {data?.revenueGrowth > 0 ? (
-                <>
-                  <StatArrow type="increase" />
-                  +{data?.revenueGrowth}% vs mois dernier
-                </>
-              ) : (
-                <>
-                  <StatArrow type="decrease" />
-                  {data?.revenueGrowth}% vs mois dernier
-                </>
-              )}
-            </StatHelpText>
-          </Stat>
-        </CardBody>
-      </Card>
-
-      <Card bg={cardBg}>
-        <CardBody>
-          <Stat>
-            <StatLabel color="gray.600">Dépenses prévues</StatLabel>
-            <StatNumber color="orange.500">
-              <HStack>
-                <Icon as={FiClock} />
-                <Text>{data?.monthlyExpenses || "0,00 €"}</Text>
-              </HStack>
-            </StatNumber>
-            <StatHelpText>Dépenses programmées</StatHelpText>
-          </Stat>
-        </CardBody>
-      </Card>
-
-      <Card bg={cardBg}>
-        <CardBody>
-          <Stat>
-            <StatLabel color="gray.600">Membres actifs</StatLabel>
-            <StatNumber color="purple.500">
-              <HStack>
-                <Icon as={FiUsers} />
-                <Text>{data?.activeMembers || 0} membres</Text>
-              </HStack>
-            </StatNumber>
-            <StatHelpText>{data?.membershipRevenue || "0,00 €"} ce mois</StatHelpText>
-          </Stat>
-        </CardBody>
-      </Card>
-    </SimpleGrid>
-  );
+  return <StatsGrid stats={stats} loading={loading} />;
 };
 
-// Composant principal
+// Composant principal mis à jour
 export default function AdminFinance() {
   const { user } = useUser();
   const toast = useToast();
-  const { 
-    isOpen: isTransactionOpen, 
-    onOpen: onTransactionOpen, 
-    onClose: onTransactionClose 
-  } = useDisclosure();
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const { 
     isOpen: isBankBalanceOpen, 
     onOpen: onBankBalanceOpen, 
     onClose: onBankBalanceClose 
   } = useDisclosure();
   const { 
-    isOpen: isExpenseOpen, 
-    onOpen: onExpenseOpen, 
-    onClose: onExpenseClose 
+    isOpen: isScheduledOperationOpen, 
+    onOpen: onScheduledOperationOpen, 
+    onClose: onScheduledOperationClose 
   } = useDisclosure();
   
   const [transactions, setTransactions] = useState([]);
-  const [scheduledExpenses, setScheduledExpenses] = useState([]);
   const [financeData, setFinanceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [bankBalance, setBankBalance] = useState(0);
+  const [scheduledOperations, setScheduledOperations] = useState([]);
+  
   const [formData, setFormData] = useState({
     type: 'recette',
     amount: 0,
@@ -227,14 +160,27 @@ export default function AdminFinance() {
     category: '',
     date: new Date().toISOString().split('T')[0]
   });
-  const [expenseData, setExpenseData] = useState({
+  
+  const [bankBalanceData, setBankBalanceData] = useState({
+    balance: 0
+  });
+  
+  const [operationFormData, setOperationFormData] = useState({
+    type: 'depense',
     description: '',
     amount: 0,
-    scheduledDate: new Date().toISOString().split('T')[0],
+    dueDate: '',
     category: '',
-    recurring: false
+    recurring: 'none',
+    isScheduled: true,
+    notes: ''
   });
+  
   const [categories, setCategories] = useState([]);
+  const [filters, setFilters] = useState({
+    page: 1,
+    limit: 20
+  });
 
   const cardBg = useColorModeValue("white", "gray.800");
   const gradientBg = useColorModeValue(
@@ -250,8 +196,9 @@ export default function AdminFinance() {
     await Promise.all([
       loadFinanceData(),
       loadTransactions(),
-      loadScheduledExpenses(),
-      loadCategories()
+      loadCategories(),
+      loadBankBalance(),
+      loadScheduledOperations()
     ]);
   };
 
@@ -265,11 +212,6 @@ export default function AdminFinance() {
       
       setFinanceData(data);
       
-      // Définir le solde bancaire s'il est configuré
-      if (data.bankBalance !== null && data.bankBalance !== undefined) {
-        setBankBalance(data.bankBalance);
-      }
-      
       toast({
         title: "Données synchronisées",
         description: "Statistiques financières mises à jour avec les données réelles",
@@ -281,8 +223,8 @@ export default function AdminFinance() {
       console.error('❌ Erreur chargement données financières:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de charger les données financières. Utilisation des données par défaut.",
-        status: "warning",
+        description: `Impossible de charger les données financières: ${error.message}`,
+        status: "error",
         duration: 5000,
         isClosable: true,
       });
@@ -293,7 +235,6 @@ export default function AdminFinance() {
         monthlyExpenses: "0,00 €",
         currentBalance: "0,00 €",
         membershipRevenue: "0,00 €",
-        bankBalance: null,
         activeMembers: 0,
         revenueGrowth: 0
       });
@@ -302,12 +243,31 @@ export default function AdminFinance() {
     }
   };
 
+  const loadBankBalance = async () => {
+    try {
+      const data = await financeAPI.getBankBalance();
+      setBankBalance(data.balance);
+      setBankBalanceData({ balance: data.balance });
+    } catch (error) {
+      console.error('❌ Erreur chargement solde bancaire:', error);
+    }
+  };
+
+  const loadScheduledOperations = async () => {
+    try {
+      const data = await financeAPI.getScheduledOperations();
+      setScheduledOperations(data.operations || []);
+    } catch (error) {
+      console.error('❌ Erreur chargement opérations programmées:', error);
+    }
+  };
+
   const loadTransactions = async () => {
     try {
       setTransactionsLoading(true);
       console.log('💳 Chargement des transactions...');
       
-      const data = await financeAPI.getTransactions({ limit: 50 });
+      const data = await financeAPI.getTransactions(filters);
       console.log('📋 Transactions reçues:', data);
       
       setTransactions(data.transactions || []);
@@ -315,7 +275,7 @@ export default function AdminFinance() {
       console.error('❌ Erreur chargement transactions:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de charger les transactions",
+        description: `Impossible de charger les transactions: ${error.message}`,
         status: "warning",
         duration: 3000,
         isClosable: true,
@@ -326,41 +286,27 @@ export default function AdminFinance() {
     }
   };
 
-  const loadScheduledExpenses = async () => {
-    try {
-      console.log('⏰ Chargement des dépenses programmées...');
-      
-      const data = await financeAPI.getScheduledExpenses(6);
-      console.log('📅 Dépenses programmées reçues:', data);
-      
-      setScheduledExpenses(data.expenses || []);
-    } catch (error) {
-      console.error('❌ Erreur chargement dépenses programmées:', error);
-      setScheduledExpenses([]);
-    }
-  };
-
   const loadCategories = async () => {
     try {
-      // Catégories par défaut étendues
-      setCategories([
-        { id: 'adhesions', name: 'Adhésions', type: 'recette' },
-        { id: 'evenements', name: 'Événements', type: 'recette' },
-        { id: 'carburant', name: 'Carburant', type: 'depense' },
-        { id: 'maintenance', name: 'Maintenance', type: 'depense' },
-        { id: 'assurance', name: 'Assurance', type: 'depense' },
-        { id: 'materiel', name: 'Matériel', type: 'depense' },
-        { id: 'frais_admin', name: 'Frais administratifs', type: 'depense' },
-        { id: 'taxes', name: 'Taxes et impôts', type: 'depense' },
-        { id: 'communication', name: 'Communication', type: 'depense' },
-        { id: 'autres', name: 'Autres', type: 'both' }
-      ]);
+      const data = await financeAPI.getCategories();
+      setCategories(data.categories || []);
     } catch (error) {
       console.error('❌ Erreur chargement catégories:', error);
+      // Catégories par défaut
+      setCategories([
+        { id: 'adhesions', name: 'Adhésions' },
+        { id: 'evenements', name: 'Événements' },
+        { id: 'carburant', name: 'Carburant' },
+        { id: 'maintenance', name: 'Maintenance' },
+        { id: 'assurance', name: 'Assurance' },
+        { id: 'materiel', name: 'Matériel' },
+        { id: 'frais_admin', name: 'Frais administratifs' },
+        { id: 'autres', name: 'Autres' }
+      ]);
     }
   };
 
-  const handleSubmitTransaction = async () => {
+  const handleSubmit = async () => {
     try {
       if (!formData.amount || !formData.description) {
         toast({
@@ -382,10 +328,8 @@ export default function AdminFinance() {
 
       console.log('✅ Transaction créée:', newTransaction);
 
-      // Ajouter la nouvelle transaction à la liste
       setTransactions(prev => [newTransaction, ...prev]);
       
-      // Réinitialiser le formulaire
       setFormData({
         type: 'recette',
         amount: 0,
@@ -394,7 +338,7 @@ export default function AdminFinance() {
         date: new Date().toISOString().split('T')[0]
       });
 
-      onTransactionClose();
+      onClose();
       
       toast({
         title: "Succès",
@@ -404,13 +348,12 @@ export default function AdminFinance() {
         isClosable: true,
       });
       
-      // Recharger les statistiques
       loadFinanceData();
     } catch (error) {
       console.error('❌ Erreur création transaction:', error);
       toast({
         title: "Erreur",
-        description: "Impossible d'enregistrer la transaction",
+        description: `Impossible d'enregistrer la transaction: ${error.message}`,
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -418,30 +361,27 @@ export default function AdminFinance() {
     }
   };
 
-  const handleSubmitBankBalance = async () => {
+  const handleBankBalanceSubmit = async () => {
     try {
-      console.log('🏦 Définition du solde bancaire:', bankBalance);
-
-      const result = await financeAPI.setBankBalance(bankBalance);
-      console.log('✅ Solde bancaire défini:', result);
-
+      const result = await financeAPI.setBankBalance(bankBalanceData.balance);
+      setBankBalance(result.balance);
       onBankBalanceClose();
       
       toast({
         title: "Succès",
-        description: `Solde bancaire défini : ${result.formatted}`,
+        description: `Solde bancaire mis à jour: ${result.formatted}`,
         status: "success",
         duration: 3000,
         isClosable: true,
       });
       
-      // Recharger les statistiques
+      // Recharger les données financières
       loadFinanceData();
     } catch (error) {
-      console.error('❌ Erreur définition solde bancaire:', error);
+      console.error('❌ Erreur mise à jour solde:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de définir le solde bancaire",
+        description: `Impossible de mettre à jour le solde: ${error.message}`,
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -449,12 +389,12 @@ export default function AdminFinance() {
     }
   };
 
-  const handleSubmitExpense = async () => {
+  const handleScheduledOperationSubmit = async () => {
     try {
-      if (!expenseData.amount || !expenseData.description) {
+      if (!operationFormData.description || !operationFormData.amount) {
         toast({
           title: "Erreur",
-          description: "Veuillez remplir tous les champs obligatoires",
+          description: "Veuillez remplir la description et le montant",
           status: "error",
           duration: 3000,
           isClosable: true,
@@ -462,45 +402,34 @@ export default function AdminFinance() {
         return;
       }
 
-      console.log('⏰ Création d\'une dépense programmée:', expenseData);
-
-      const newExpense = await financeAPI.createScheduledExpense({
-        ...expenseData,
-        created_by: user?.email || user?.username || 'admin'
-      });
-
-      console.log('✅ Dépense programmée créée:', newExpense);
-
-      // Ajouter la nouvelle dépense à la liste
-      setScheduledExpenses(prev => [newExpense, ...prev]);
+      const newOperation = await financeAPI.createScheduledOperation(operationFormData);
+      setScheduledOperations(prev => [...prev, newOperation]);
       
-      // Réinitialiser le formulaire
-      setExpenseData({
+      setOperationFormData({
+        type: 'depense',
         description: '',
         amount: 0,
-        scheduledDate: new Date().toISOString().split('T')[0],
+        dueDate: '',
         category: '',
-        recurring: false
+        recurring: 'none',
+        isScheduled: true,
+        notes: ''
       });
-
-      onExpenseClose();
+      
+      onScheduledOperationClose();
       
       toast({
         title: "Succès",
-        description: "Dépense programmée enregistrée avec succès",
+        description: "Opération programmée créée avec succès",
         status: "success",
         duration: 3000,
         isClosable: true,
       });
-      
-      // Recharger les données
-      loadFinanceData();
-      loadScheduledExpenses();
     } catch (error) {
-      console.error('❌ Erreur création dépense programmée:', error);
+      console.error('❌ Erreur création opération programmée:', error);
       toast({
         title: "Erreur",
-        description: "Impossible d'enregistrer la dépense programmée",
+        description: `Impossible de créer l'opération programmée: ${error.message}`,
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -523,13 +452,12 @@ export default function AdminFinance() {
         isClosable: true,
       });
       
-      // Recharger les données
       await loadInitialData();
     } catch (error) {
       console.error('❌ Erreur synchronisation:', error);
       toast({
         title: "Erreur synchronisation",
-        description: "Impossible de synchroniser les adhésions",
+        description: `Impossible de synchroniser les adhésions: ${error.message}`,
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -539,13 +467,19 @@ export default function AdminFinance() {
 
   const handleExport = async () => {
     try {
-      console.log('📤 Export des données comptables...');
-      
-      const result = await financeAPI.exportData('csv');
+      const blob = await financeAPI.exportData('csv');
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `finance-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
       
       toast({
         title: "Export réussi",
-        description: result.message,
+        description: "Les données ont été exportées avec succès",
         status: "success",
         duration: 3000,
         isClosable: true,
@@ -556,33 +490,7 @@ export default function AdminFinance() {
         title: "Erreur export",
         description: "Impossible d'exporter les données",
         status: "error",
-        duration: 5000,
-        isClosable: true,
-      });
-    }
-  };
-
-  const handleGenerateReport = async () => {
-    try {
-      console.log('📊 Génération du rapport mensuel...');
-      
-      const report = await financeAPI.generateReport('monthly');
-      console.log('📋 Rapport généré:', report);
-      
-      toast({
-        title: "Rapport généré",
-        description: "Le rapport mensuel a été généré avec succès",
-        status: "success",
         duration: 3000,
-        isClosable: true,
-      });
-    } catch (error) {
-      console.error('❌ Erreur génération rapport:', error);
-      toast({
-        title: "Erreur rapport",
-        description: "Impossible de générer le rapport",
-        status: "error",
-        duration: 5000,
         isClosable: true,
       });
     }
@@ -590,243 +498,328 @@ export default function AdminFinance() {
 
   if (loading) {
     return (
-      <Container maxW="container.xl" py={8}>
-        <VStack spacing={8}>
-          <Box
-            bgGradient={gradientBg}
-            color="white"
-            p={8}
-            borderRadius="xl"
-            textAlign="center"
-            w="full"
-          >
-            <Heading size="xl">🏦 Gestion Administrative et Financière</Heading>
-            <Text mt={2} opacity={0.9}>
-              Chargement des données financières en cours...
-            </Text>
-          </Box>
-          <Spinner size="xl" color="blue.500" />
+      <PageLayout
+        title="🏦 Gestion Financière"
+        subtitle="Chargement des données financières..."
+        bgGradient="linear(to-r, rbe.600, blue.600)"
+      >
+        <VStack spacing={8} py={16}>
+          <Spinner size="xl" color="rbe.500" thickness="4px" />
+          <Text color="gray.600">Synchronisation avec la base de données...</Text>
         </VStack>
-      </Container>
+      </PageLayout>
     );
   }
 
   return (
-    <Container maxW="container.xl" py={8} fontFamily="Montserrat, sans-serif">
-      {/* En-tête avec gradient */}
-      <Box
-        bgGradient={gradientBg}
-        color="white"
-        p={8}
-        borderRadius="xl"
-        mb={8}
-        textAlign="center"
-      >
-        <Heading size="xl" mb={4}>
-          🏦 Gestion Administrative et Financière
-        </Heading>
-        <Text fontSize="lg" opacity={0.9}>
-          Données synchronisées avec les adhésions et événements • MyRBE
-        </Text>
-        <HStack spacing={4} justify="center" mt={4}>
+    <PageLayout
+      title="💰 Gestion Financière"
+      subtitle="Suivi des recettes, dépenses et trésorerie de l'association"
+      bgGradient="linear(to-r, rbe.600, green.600)"
+      breadcrumbs={[
+        { label: "MyRBE", href: "/dashboard/myrbe" },
+        { label: "Gestion Financière", href: "/admin/finance" }
+      ]}
+      headerActions={
+        <HStack spacing={3}>
           <Button
-            size="sm"
-            variant="outline"
+            leftIcon={<FiPlus />}
+            variant="secondary"
+            bg="whiteAlpha.200"
             color="white"
             borderColor="whiteAlpha.300"
-            leftIcon={<FiCreditCard />}
-            onClick={onBankBalanceOpen}
+            _hover={{ bg: "whiteAlpha.300" }}
+            onClick={onOpen}
           >
-            {financeData?.bankBalance !== null ? 'Modifier solde' : 'Définir solde bancaire'}
+            Nouvelle transaction
+          </Button>
+          <Button
+            leftIcon={<FiClock />}
+            variant="secondary"
+            bg="whiteAlpha.200"
+            color="white"
+            borderColor="whiteAlpha.300"
+            _hover={{ bg: "whiteAlpha.300" }}
+            onClick={onScheduledOperationOpen}
+          >
+            Programmer opération
           </Button>
         </HStack>
-      </Box>
+      }
+    >
+      <VStack spacing={8} align="stretch">
+        {/* Statistiques financières */}
+        <FinanceStats data={financeData} loading={false} />
 
-      {/* Statistiques financières */}
-      <FinanceStats data={financeData} loading={false} />
+        {/* Onglets de gestion */}
+        <Tabs variant="enclosed" colorScheme="rbe">
+          <TabList>
+            <Tab _selected={{ color: "rbe.600", borderColor: "rbe.600" }}>
+              💳 Transactions
+            </Tab>
+            <Tab _selected={{ color: "rbe.600", borderColor: "rbe.600" }}>
+              📅 Opérations programmées
+            </Tab>
+            <Tab _selected={{ color: "rbe.600", borderColor: "rbe.600" }}>
+              ⚙️ Configuration
+            </Tab>
+          </TabList>
 
-      {/* Onglets principaux */}
-      <Tabs variant="enclosed" colorScheme="blue">
-        <TabList>
-          <Tab>Transactions</Tab>
-          <Tab>Dépenses programmées ({scheduledExpenses.length})</Tab>
-          <Tab>Actions rapides</Tab>
-        </TabList>
+          <TabPanels>
+            {/* Onglet Transactions */}
+            <TabPanel px={0}>
+              <Grid templateColumns={{ base: "1fr", lg: "2fr 1fr" }} gap={8}>
+                <ModernCard
+                  title="Transactions récentes"
+                  badge={{ label: `${transactions.length}`, color: "blue" }}
+                >
+                  <VStack spacing={4} align="stretch">
+                    <HStack justify="space-between">
+                      <ButtonGroup size="sm">
+                        <Button
+                          leftIcon={<FiPlus />}
+                          variant="primary"
+                          onClick={onOpen}
+                        >
+                          Nouvelle transaction
+                        </Button>
+                        <Button
+                          leftIcon={<FiRefreshCw />}
+                          variant="modern"
+                          onClick={loadTransactions}
+                          isLoading={transactionsLoading}
+                        >
+                          Actualiser
+                        </Button>
+                      </ButtonGroup>
+                    </HStack>
 
-        <TabPanels>
-          {/* Onglet Transactions */}
-          <TabPanel>
-            <Grid templateColumns={{ base: "1fr", lg: "1fr" }} gap={8}>
+                    {transactionsLoading ? (
+                      <VStack py={8}>
+                        <Spinner color="rbe.500" />
+                        <Text color="gray.500">Chargement des transactions...</Text>
+                      </VStack>
+                    ) : transactions.length === 0 ? (
+                      <VStack py={8} spacing={4}>
+                        <Text color="gray.500" fontSize="lg">Aucune transaction trouvée</Text>
+                        <Button 
+                          size="sm" 
+                          onClick={handleSyncMemberships} 
+                          leftIcon={<FiUsers />}
+                          variant="secondary"
+                        >
+                          Synchroniser les adhésions
+                        </Button>
+                      </VStack>
+                    ) : (
+                      <Table variant="simple" size="sm">
+                        <Thead>
+                          <Tr>
+                            <Th>Date</Th>
+                            <Th>Type</Th>
+                            <Th>Description</Th>
+                            <Th isNumeric>Montant</Th>
+                            <Th>Actions</Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {transactions.map((transaction) => (
+                            <Tr key={transaction.id} _hover={{ bg: "gray.50" }}>
+                              <Td fontSize="sm">
+                                {new Date(transaction.date).toLocaleDateString('fr-FR')}
+                              </Td>
+                              <Td>
+                                <Badge
+                                  colorScheme={transaction.type === 'recette' ? 'success' : 'warning'}
+                                  variant="subtle"
+                                  borderRadius="md"
+                                >
+                                  {transaction.type === 'recette' ? 'Recette' : 'Dépense'}
+                                </Badge>
+                              </Td>
+                              <Td>
+                                <VStack align="start" spacing={0}>
+                                  <Text fontSize="sm" fontWeight="500">
+                                    {transaction.description}
+                                  </Text>
+                                  {transaction.member && (
+                                    <Text fontSize="xs" color="gray.500">
+                                      {transaction.member.firstName} {transaction.member.lastName} 
+                                      ({transaction.member.memberNumber})
+                                    </Text>
+                                  )}
+                                </VStack>
+                              </Td>
+                              <Td isNumeric>
+                                <Text
+                                  color={transaction.type === 'recette' ? 'success.600' : 'warning.600'}
+                                  fontWeight="600"
+                                  fontSize="sm"
+                                >
+                                  {transaction.type === 'recette' ? '+' : '-'}
+                                  {new Intl.NumberFormat('fr-FR', {
+                                    style: 'currency',
+                                    currency: 'EUR'
+                                  }).format(transaction.amount)}
+                                </Text>
+                              </Td>
+                              <Td>
+                                <Menu>
+                                  <MenuButton
+                                    as={IconButton}
+                                    icon={<FiMoreHorizontal />}
+                                    variant="ghost"
+                                    size="sm"
+                                  />
+                                  <MenuList>
+                                    <MenuItem icon={<FiEye />}>Voir détails</MenuItem>
+                                    <MenuItem icon={<FiEdit3 />}>Modifier</MenuItem>
+                                    <MenuItem icon={<FiTrash2 />} color="red.500">
+                                      Supprimer
+                                    </MenuItem>
+                                  </MenuList>
+                                </Menu>
+                              </Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    )}
+                  </VStack>
+                </ModernCard>
+
+                {/* Sidebar des actions rapides */}
+                <VStack spacing={4}>
+                  <ModernCard title="Actions rapides" color="gray">
+                    <VStack spacing={3}>
+                      <Button
+                        leftIcon={<FiUsers />}
+                        variant="modern"
+                        size="sm"
+                        w="full"
+                        onClick={handleSyncMemberships}
+                      >
+                        Synchroniser adhésions
+                      </Button>
+                      <Button
+                        leftIcon={<FiDownload />}
+                        variant="modern"
+                        size="sm"
+                        w="full"
+                        onClick={handleExport}
+                      >
+                        Exporter comptabilité
+                      </Button>
+                      <Button
+                        leftIcon={<FiSettings />}
+                        variant="modern"
+                        size="sm"
+                        w="full"
+                        onClick={onBankBalanceOpen}
+                      >
+                        Configurer solde
+                      </Button>
+                    </VStack>
+                  </ModernCard>
+
+                  <Alert status="success" borderRadius="lg" border="1px solid" borderColor="success.200">
+                    <AlertIcon />
+                    <VStack align="start" spacing={1}>
+                      <Text fontWeight="600" fontSize="sm" color="success.800">
+                        Données en temps réel
+                      </Text>
+                      <Text fontSize="xs" color="success.700">
+                        Synchronisé avec {financeData?.activeMembers || 0} membres actifs
+                      </Text>
+                    </VStack>
+                  </Alert>
+                </VStack>
+              </Grid>
+            </TabPanel>
+
+            {/* Onglet Opérations programmées */}
+            <TabPanel px={0}>
               <Card bg={cardBg}>
                 <CardHeader>
                   <HStack justify="space-between">
-                    <Heading size="md">Transactions récentes</Heading>
-                    <ButtonGroup size="sm">
-                      <Button
-                        leftIcon={<FiPlus />}
-                        colorScheme="blue"
-                        onClick={onTransactionOpen}
-                      >
-                        Nouvelle transaction
-                      </Button>
-                      <Button
-                        leftIcon={<FiRefreshCw />}
-                        onClick={loadTransactions}
-                        variant="outline"
-                        isLoading={transactionsLoading}
-                      >
-                        Actualiser
-                      </Button>
-                    </ButtonGroup>
+                    <Heading size="md">📅 Opérations programmées</Heading>
+                    <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={onScheduledOperationOpen}>
+                      Programmer une opération
+                    </Button>
                   </HStack>
                 </CardHeader>
                 <CardBody>
-                  {transactionsLoading ? (
+                  {scheduledOperations.length === 0 ? (
                     <VStack py={8}>
-                      <Spinner />
-                      <Text>Chargement des transactions...</Text>
-                    </VStack>
-                  ) : transactions.length === 0 ? (
-                    <VStack py={8}>
-                      <Icon as={FiDollarSign} size="48px" color="gray.300" />
-                      <Text color="gray.500">Aucune transaction trouvée</Text>
-                      <Button size="sm" onClick={handleSyncMemberships} leftIcon={<FiUsers />}>
-                        Synchroniser les adhésions
+                      <Icon as={FiClock} size="48px" color="gray.300" />
+                      <Text color="gray.500">Aucune opération programmée</Text>
+                      <Button size="sm" onClick={onScheduledOperationOpen} leftIcon={<FiPlus />}>
+                        Programmer une opération
                       </Button>
                     </VStack>
                   ) : (
                     <Table variant="simple" size="sm">
                       <Thead>
                         <Tr>
-                          <Th>Date</Th>
                           <Th>Type</Th>
                           <Th>Description</Th>
+                          <Th>Catégorie</Th>
                           <Th isNumeric>Montant</Th>
+                          <Th>Date prévue</Th>
+                          <Th>Récurrence</Th>
                           <Th>Actions</Th>
                         </Tr>
                       </Thead>
                       <Tbody>
-                        {transactions.map((transaction) => (
-                          <Tr key={transaction.id}>
-                            <Td>{new Date(transaction.date).toLocaleDateString('fr-FR')}</Td>
+                        {scheduledOperations.map((operation) => (
+                          <Tr key={operation.id}>
                             <Td>
                               <Badge
-                                colorScheme={transaction.type === 'recette' ? 'green' : 'red'}
+                                colorScheme={operation.type === 'recette' ? 'green' : 'red'}
                                 variant="subtle"
                               >
-                                {transaction.type === 'recette' ? 'Recette' : 'Dépense'}
+                                {operation.type === 'recette' ? 'Recette' : 'Dépense'}
                               </Badge>
                             </Td>
                             <Td>
                               <VStack align="start" spacing={0}>
-                                <Text fontSize="sm">{transaction.description}</Text>
-                                {transaction.member && (
-                                  <Text fontSize="xs" color="gray.500">
-                                    {transaction.member.firstName} {transaction.member.lastName} 
-                                    ({transaction.member.memberNumber})
-                                  </Text>
+                                <Text fontSize="sm" fontWeight="bold">{operation.description}</Text>
+                                {operation.notes && (
+                                  <Text fontSize="xs" color="gray.500">{operation.notes}</Text>
                                 )}
                               </VStack>
                             </Td>
-                            <Td isNumeric>
-                              <Text
-                                color={transaction.type === 'recette' ? 'green.500' : 'red.500'}
-                                fontWeight="bold"
-                              >
-                                {transaction.type === 'recette' ? '+' : '-'}
-                                {new Intl.NumberFormat('fr-FR', {
-                                  style: 'currency',
-                                  currency: 'EUR'
-                                }).format(transaction.amount)}
-                              </Text>
-                            </Td>
                             <Td>
-                              <Menu>
-                                <MenuButton
-                                  as={IconButton}
-                                  icon={<FiMoreHorizontal />}
-                                  variant="ghost"
-                                  size="sm"
-                                />
-                                <MenuList>
-                                  <MenuItem icon={<FiEye />}>Voir détails</MenuItem>
-                                  <MenuItem icon={<FiEdit3 />}>Modifier</MenuItem>
-                                  <MenuItem icon={<FiTrash2 />} color="red.500">Supprimer</MenuItem>
-                                </MenuList>
-                              </Menu>
-                            </Td>
-                          </Tr>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  )}
-                </CardBody>
-              </Card>
-            </Grid>
-          </TabPanel>
-
-          {/* Onglet Dépenses programmées */}
-          <TabPanel>
-            <Grid templateColumns={{ base: "1fr", lg: "1fr" }} gap={8}>
-              <Card bg={cardBg}>
-                <CardHeader>
-                  <HStack justify="space-between">
-                    <Heading size="md">Dépenses programmées (6 prochains mois)</Heading>
-                    <Button
-                      leftIcon={<FiPlus />}
-                      colorScheme="orange"
-                      size="sm"
-                      onClick={onExpenseOpen}
-                    >
-                      Programmer une dépense
-                    </Button>
-                  </HStack>
-                </CardHeader>
-                <CardBody>
-                  {scheduledExpenses.length === 0 ? (
-                    <VStack py={8}>
-                      <Icon as={FiClock} size="48px" color="gray.300" />
-                      <Text color="gray.500">Aucune dépense programmée</Text>
-                      <Button size="sm" onClick={onExpenseOpen} leftIcon={<FiPlus />}>
-                        Programmer la première dépense
-                      </Button>
-                    </VStack>
-                  ) : (
-                    <Table variant="simple" size="sm">
-                      <Thead>
-                        <Tr>
-                          <Th>Date prévue</Th>
-                          <Th>Description</Th>
-                          <Th>Catégorie</Th>
-                          <Th isNumeric>Montant</Th>
-                          <Th>Récurrent</Th>
-                          <Th>Actions</Th>
-                        </Tr>
-                      </Thead>
-                      <Tbody>
-                        {scheduledExpenses.map((expense) => (
-                          <Tr key={expense.id}>
-                            <Td>{new Date(expense.scheduledDate).toLocaleDateString('fr-FR')}</Td>
-                            <Td>{expense.description}</Td>
-                            <Td>
-                              <Badge colorScheme="orange" variant="subtle">
-                                {expense.category || 'Autres'}
+                              <Badge variant="subtle">
+                                {categories.find(c => c.id === operation.category)?.name || operation.category}
                               </Badge>
                             </Td>
                             <Td isNumeric>
-                              <Text color="orange.500" fontWeight="bold">
-                                {new Intl.NumberFormat('fr-FR', {
-                                  style: 'currency',
-                                  currency: 'EUR'
-                                }).format(expense.amount)}
+                              <Text fontWeight="bold" 
+                                color={operation.type === 'recette' ? 'green.500' : 'red.500'}>
+                                {operation.type === 'recette' ? '+' : '-'}
+                                {operation.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
                               </Text>
                             </Td>
                             <Td>
-                              {expense.recurring ? (
-                                <Badge colorScheme="blue" variant="outline">Récurrent</Badge>
+                              {operation.dueDate ? (
+                                new Date(operation.dueDate).toLocaleDateString('fr-FR')
                               ) : (
-                                <Badge variant="outline">Ponctuel</Badge>
+                                <Badge variant="outline">Pas de date</Badge>
                               )}
+                            </Td>
+                            <Td>
+                              <HStack>
+                                {operation.recurring !== 'none' && (
+                                  <Icon as={FiRepeat} color="blue.500" size="sm" />
+                                )}
+                                <Text fontSize="sm">
+                                  {operation.recurring === 'none' ? 'Unique' : 
+                                   operation.recurring === 'monthly' ? 'Mensuelle' :
+                                   operation.recurring === 'quarterly' ? 'Trimestrielle' :
+                                   operation.recurring === 'yearly' ? 'Annuelle' : operation.recurring}
+                                </Text>
+                              </HStack>
                             </Td>
                             <Td>
                               <Menu>
@@ -837,6 +830,7 @@ export default function AdminFinance() {
                                   size="sm"
                                 />
                                 <MenuList>
+                                  <MenuItem icon={<FiCheck />}>Exécuter maintenant</MenuItem>
                                   <MenuItem icon={<FiEdit3 />}>Modifier</MenuItem>
                                   <MenuItem icon={<FiTrash2 />} color="red.500">Supprimer</MenuItem>
                                 </MenuList>
@@ -849,160 +843,60 @@ export default function AdminFinance() {
                   )}
                 </CardBody>
               </Card>
-            </Grid>
-          </TabPanel>
+            </TabPanel>
 
-          {/* Onglet Actions rapides */}
-          <TabPanel>
-            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
-              <Card bg={cardBg}>
-                <CardHeader>
-                  <Heading size="sm">Synchronisation</Heading>
-                </CardHeader>
-                <CardBody>
-                  <VStack spacing={3}>
-                    <Button
-                      leftIcon={<FiUsers />}
-                      colorScheme="blue"
-                      size="sm"
-                      w="full"
-                      onClick={handleSyncMemberships}
-                    >
-                      Synchroniser adhésions
-                    </Button>
-                    <Button
-                      leftIcon={<FiRefreshCw />}
-                      variant="outline"
-                      size="sm"
-                      w="full"
-                      onClick={loadInitialData}
-                    >
-                      Actualiser toutes les données
-                    </Button>
-                  </VStack>
-                </CardBody>
-              </Card>
+            {/* Onglet Configuration */}
+            <TabPanel px={0}>
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+                <Card bg={cardBg}>
+                  <CardHeader>
+                    <Heading size="md">Solde bancaire</Heading>
+                  </CardHeader>
+                  <CardBody>
+                    <VStack spacing={4}>
+                      <Text fontSize="2xl" fontWeight="bold" color="blue.500">
+                        {bankBalance.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                      </Text>
+                      <Button size="sm" onClick={onBankBalanceOpen} leftIcon={<FiEdit3 />}>
+                        Modifier le solde
+                      </Button>
+                    </VStack>
+                  </CardBody>
+                </Card>
 
-              <Card bg={cardBg}>
-                <CardHeader>
-                  <Heading size="sm">Rapports et Export</Heading>
-                </CardHeader>
-                <CardBody>
-                  <VStack spacing={3}>
-                    <Button
-                      leftIcon={<FiDownload />}
-                      colorScheme="green"
-                      size="sm"
-                      w="full"
-                      onClick={handleExport}
-                    >
-                      Exporter comptabilité
-                    </Button>
-                    <Button
-                      leftIcon={<FiFileText />}
-                      colorScheme="purple"
-                      size="sm"
-                      w="full"
-                      onClick={handleGenerateReport}
-                    >
-                      Générer rapport mensuel
-                    </Button>
-                    <Button
-                      leftIcon={<FiPieChart />}
-                      variant="outline"
-                      size="sm"
-                      w="full"
-                    >
-                      Analyse par catégorie
-                    </Button>
-                  </VStack>
-                </CardBody>
-              </Card>
-
-              <Card bg={cardBg}>
-                <CardHeader>
-                  <Heading size="sm">Configuration</Heading>
-                </CardHeader>
-                <CardBody>
-                  <VStack spacing={3}>
-                    <Button
-                      leftIcon={<FiSettings />}
-                      variant="outline"
-                      size="sm"
-                      w="full"
-                      onClick={onBankBalanceOpen}
-                    >
-                      {financeData?.bankBalance !== null ? 'Modifier solde bancaire' : 'Définir solde bancaire'}
-                    </Button>
-                    <Button
-                      leftIcon={<FiUpload />}
-                      variant="outline"
-                      size="sm"
-                      w="full"
-                    >
-                      Importer relevé bancaire
-                    </Button>
-                  </VStack>
-                </CardBody>
-              </Card>
-            </SimpleGrid>
-
-            <Alert status="success" borderRadius="md" mt={6}>
-              <AlertIcon />
-              <VStack align="start" spacing={1}>
-                <Text fontWeight="bold" fontSize="sm">
-                  Actions rapides fonctionnelles
-                </Text>
-                <Text fontSize="xs">
-                  Toutes les fonctionnalités sont maintenant opérationnelles et connectées aux vraies données.
-                </Text>
-              </VStack>
-            </Alert>
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
-
-      {/* Modal pour définir le solde bancaire */}
-      <Modal isOpen={isBankBalanceOpen} onClose={onBankBalanceClose}>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>
-            {financeData?.bankBalance !== null ? 'Modifier le solde bancaire' : 'Définir le solde bancaire'}
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4}>
-              <Alert status="info">
-                <AlertIcon />
-                <Text fontSize="sm">
-                  Entrez le solde actuel du compte bancaire de l'association. 
-                  Cette information servira de base pour tous les calculs financiers.
-                </Text>
-              </Alert>
-              
-              <FormControl isRequired>
-                <FormLabel>Solde actuel du compte bancaire</FormLabel>
-                <MoneyInput
-                  value={bankBalance}
-                  onChange={(value) => setBankBalance(value)}
-                  placeholder="0,00 €"
-                />
-              </FormControl>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onBankBalanceClose}>
-              Annuler
-            </Button>
-            <Button colorScheme="blue" onClick={handleSubmitBankBalance} leftIcon={<FiSave />}>
-              Enregistrer
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+                <Card bg={cardBg}>
+                  <CardHeader>
+                    <Heading size="md">Prochaines dépenses</Heading>
+                  </CardHeader>
+                  <CardBody>
+                    <VStack spacing={3}>
+                      {scheduledOperations.slice(0, 3).map(operation => (
+                        <HStack key={operation.id} justify="space-between" w="full">
+                          <VStack align="start" spacing={0}>
+                            <Text fontSize="sm" fontWeight="bold">{operation.description}</Text>
+                            <Text fontSize="xs" color="gray.500">
+                              {new Date(operation.dueDate).toLocaleDateString('fr-FR')}
+                            </Text>
+                          </VStack>
+                          <Text fontWeight="bold" color="red.500">
+                            {operation.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                          </Text>
+                        </HStack>
+                      ))}
+                      <Button size="sm" onClick={onScheduledOperationOpen} leftIcon={<FiPlus />}>
+                        Ajouter une dépense
+                      </Button>
+                    </VStack>
+                  </CardBody>
+                </Card>
+              </SimpleGrid>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </VStack>
 
       {/* Modal pour nouvelle transaction */}
-      <Modal isOpen={isTransactionOpen} onClose={onTransactionClose} size="lg">
+      <Modal isOpen={isOpen} onClose={onClose} size="lg">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Nouvelle transaction</ModalHeader>
@@ -1045,11 +939,9 @@ export default function AdminFinance() {
                   onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                   placeholder="Sélectionner une catégorie"
                 >
-                  {categories
-                    .filter(cat => cat.type === 'both' || cat.type === formData.type)
-                    .map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </Select>
               </FormControl>
 
@@ -1064,86 +956,167 @@ export default function AdminFinance() {
             </VStack>
           </ModalBody>
           <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onTransactionClose}>
+            <Button variant="ghost" mr={3} onClick={onClose}>
               Annuler
             </Button>
-            <Button colorScheme="blue" onClick={handleSubmitTransaction}>
+            <Button colorScheme="blue" onClick={handleSubmit}>
               Enregistrer
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* Modal pour dépense programmée */}
-      <Modal isOpen={isExpenseOpen} onClose={onExpenseClose} size="lg">
+      {/* Modal pour configuration du solde bancaire */}
+      <Modal isOpen={isBankBalanceOpen} onClose={onBankBalanceClose}>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Programmer une dépense</ModalHeader>
+          <ModalHeader>Configuration du solde bancaire</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             <VStack spacing={4}>
+              <Alert status="info">
+                <AlertIcon />
+                <VStack align="start" spacing={1}>
+                  <Text fontWeight="bold" fontSize="sm">
+                    Solde du compte de l'association
+                  </Text>
+                  <Text fontSize="xs">
+                    Entrez le solde actuel de votre compte bancaire. Cette information sera utilisée pour calculer la trésorerie disponible.
+                  </Text>
+                </VStack>
+              </Alert>
+              
+              <FormControl isRequired>
+                <FormLabel>Solde actuel du compte bancaire</FormLabel>
+                <MoneyInput
+                  value={bankBalanceData.balance}
+                  onChange={(value) => setBankBalanceData({ balance: value })}
+                  placeholder="0,00 €"
+                  size="lg"
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onBankBalanceClose}>
+              Annuler
+            </Button>
+            <Button colorScheme="blue" onClick={handleBankBalanceSubmit} leftIcon={<FiSave />}>
+              Enregistrer
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Modal pour programmer une opération */}
+      <Modal isOpen={isScheduledOperationOpen} onClose={onScheduledOperationClose} size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>📅 Programmer une opération financière</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4}>
+              <Alert status="info">
+                <AlertIcon />
+                <VStack align="start" spacing={1}>
+                  <Text fontWeight="bold" fontSize="sm">
+                    Opération programmée
+                  </Text>
+                  <Text fontSize="xs">
+                    Cette opération sera visible dans votre planning financier. La date est optionnelle pour les opérations sans échéance précise.
+                  </Text>
+                </VStack>
+              </Alert>
+
+              <FormControl isRequired>
+                <FormLabel>Type d'opération</FormLabel>
+                <Select
+                  value={operationFormData.type}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, type: e.target.value }))}
+                >
+                  <option value="recette">Recette</option>
+                  <option value="depense">Dépense</option>
+                </Select>
+              </FormControl>
+
               <FormControl isRequired>
                 <FormLabel>Description</FormLabel>
-                <Textarea
-                  value={expenseData.description}
-                  onChange={(e) => setExpenseData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Description de la dépense..."
+                <Input
+                  value={operationFormData.description}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ex: Cotisation assurance, Maintenance véhicule..."
                 />
               </FormControl>
 
               <FormControl isRequired>
                 <FormLabel>Montant</FormLabel>
                 <MoneyInput
-                  value={expenseData.amount}
-                  onChange={(value) => setExpenseData(prev => ({ ...prev, amount: value }))}
+                  value={operationFormData.amount}
+                  onChange={(value) => setOperationFormData(prev => ({ ...prev, amount: value }))}
                   placeholder="0,00 €"
                 />
               </FormControl>
 
-              <FormControl isRequired>
-                <FormLabel>Date prévue</FormLabel>
+              <FormControl>
+                <FormLabel>Date prévue (optionnelle)</FormLabel>
                 <Input
                   type="date"
-                  value={expenseData.scheduledDate}
-                  onChange={(e) => setExpenseData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                  value={operationFormData.dueDate}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                  placeholder="Laisser vide si pas de date précise"
                 />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Laissez vide pour une opération sans date d'échéance précise
+                </Text>
               </FormControl>
 
               <FormControl>
                 <FormLabel>Catégorie</FormLabel>
                 <Select
-                  value={expenseData.category}
-                  onChange={(e) => setExpenseData(prev => ({ ...prev, category: e.target.value }))}
+                  value={operationFormData.category}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, category: e.target.value }))}
                   placeholder="Sélectionner une catégorie"
                 >
-                  {categories
-                    .filter(cat => cat.type === 'depense' || cat.type === 'both')
-                    .map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </Select>
               </FormControl>
 
               <FormControl>
-                <FormLabel>Récurrente</FormLabel>
-                <Switch
-                  isChecked={expenseData.recurring}
-                  onChange={(e) => setExpenseData(prev => ({ ...prev, recurring: e.target.checked }))}
-                  colorScheme="blue"
+                <FormLabel>Récurrence</FormLabel>
+                <Select
+                  value={operationFormData.recurring}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, recurring: e.target.value }))}
+                >
+                  <option value="none">Unique</option>
+                  <option value="monthly">Mensuelle</option>
+                  <option value="quarterly">Trimestrielle</option>
+                  <option value="yearly">Annuelle</option>
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Notes (optionnel)</FormLabel>
+                <Textarea
+                  value={operationFormData.notes}
+                  onChange={(e) => setOperationFormData(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Notes additionnelles sur cette opération..."
+                  size="sm"
                 />
               </FormControl>
             </VStack>
           </ModalBody>
           <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onExpenseClose}>
+            <Button variant="ghost" mr={3} onClick={onScheduledOperationClose}>
               Annuler
             </Button>
-            <Button colorScheme="blue" onClick={handleSubmitExpense}>
-              Enregistrer
+            <Button colorScheme="blue" onClick={handleScheduledOperationSubmit} leftIcon={<FiSave />}>
+              Programmer l'opération
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </Container>
+    </PageLayout>
   );
 }

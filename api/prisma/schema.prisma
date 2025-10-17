@@ -385,3 +385,48 @@ model StockMovement {
   @@index([type])
   @@index([createdAt])
 }
+
+model ScheduledOperation {
+  id          String    @id @default(cuid())
+  type        String    // 'recette' ou 'depense'
+  description String
+  amount      Float
+  dueDate     DateTime? // Optionnel - peut être null
+  category    String?
+  recurring   String    @default("none") // 'none', 'monthly', 'quarterly', 'yearly'
+  notes       String?
+  isExecuted  Boolean   @default(false)
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("scheduled_operations")
+}
+
+model RetroReport {
+  id          String                @id @default(cuid())
+  title       String
+  description String
+  category    String?
+  priority    String                @default("medium") // 'low', 'medium', 'high', 'critical'
+  status      String                @default("open")   // 'open', 'in_progress', 'resolved', 'closed'
+  type        String                @default("bug")    // 'bug', 'feature', 'performance', 'security', 'other'
+  assignedTo  String?
+  createdBy   String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  comments    RetroReportComment[]
+
+  @@map("retro_reports")
+}
+
+model RetroReportComment {
+  id        String      @id @default(cuid())
+  reportId  String
+  message   String
+  author    String
+  createdAt DateTime    @default(now())
+  report    RetroReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("retro_report_comments")
+}

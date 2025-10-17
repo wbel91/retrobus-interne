@@ -39,75 +39,86 @@ import {
 } from '@chakra-ui/react';
 import { FiPlus, FiEdit, FiList, FiGrid, FiCalendar, FiMapPin, FiDollarSign, FiUsers } from 'react-icons/fi';
 import VehicleSelector from '../components/VehicleSelector';
-import { eventsAPI, vehiculesAPI } from '../api/config.js';
+import { eventsAPI } from '../api/events.js';
+import { vehiculesAPI } from '../api/vehicles.js';
 
 // Templates d'événements avec thèmes
 const EVENT_TEMPLATES = {
   public_info_only: {
     name: "Information publique",
     color: "blue",
+    description: "Événement d'information sans inscription",
     defaults: {
       isVisible: true,
-      allowPublicRegistration: false,
       requiresRegistration: false,
+      allowPublicRegistration: false,
       isFree: true,
-      status: 'PUBLISHED'
-    },
-    description: "Événement visible par tous, sans inscription requise"
+      registrationMethod: 'none',
+      eventType: 'public_info_only'
+    }
   },
-  public_with_registration: {
-    name: "Événement public avec inscription",
+  paid_event: {
+    name: "Événement payant",
     color: "green",
+    description: "Événement avec tarifs et inscription",
     defaults: {
       isVisible: true,
+      requiresRegistration: true,
       allowPublicRegistration: true,
-      requiresRegistration: true,
       isFree: false,
-      adultPrice: 15,
-      childPrice: 8,
       registrationMethod: 'helloasso',
-      status: 'PUBLISHED'
-    },
-    description: "Événement public avec inscription obligatoire via HelloAsso"
+      eventType: 'paid_event'
+    }
   },
-  private_members_only: {
-    name: "Réservé aux adhérents",
+  free_registration: {
+    name: "Inscription gratuite",
     color: "purple",
+    description: "Événement gratuit avec inscription",
     defaults: {
-      isVisible: false,
-      allowPublicRegistration: false,
+      isVisible: true,
       requiresRegistration: true,
+      allowPublicRegistration: true,
       isFree: true,
       registrationMethod: 'internal',
-      status: 'PUBLISHED'
-    },
-    description: "Événement privé réservé aux membres de l'association"
+      eventType: 'free_registration'
+    }
   },
-  pdf_download: {
-    name: "Inscription par PDF",
-    color: "teal",
+  internal_only: {
+    name: "Événement interne",
+    color: "orange",
+    description: "Événement réservé aux membres",
     defaults: {
-      isVisible: true,
-      allowPublicRegistration: true,
-      requiresRegistration: true,
-      isFree: false,
-      adultPrice: 12,
-      childPrice: 6,
-      registrationMethod: 'pdf',
-      status: 'PUBLISHED'
-    },
-    description: "Événement public avec formulaire PDF à télécharger"
+      isVisible: false,
+      requiresRegistration: false,
+      allowPublicRegistration: false,
+      isFree: true,
+      registrationMethod: 'none',
+      eventType: 'internal_only'
+    }
+  },
+  maintenance: {
+    name: "Maintenance/Atelier",
+    color: "red",
+    description: "Activité de maintenance ou atelier technique",
+    defaults: {
+      isVisible: false,
+      requiresRegistration: false,
+      allowPublicRegistration: false,
+      isFree: true,
+      registrationMethod: 'none',
+      eventType: 'maintenance'
+    }
   }
 };
 
-const EventsCreation = () => {
+export default function EventsCreation() {
   const [events, setEvents] = useState([]);
   const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('cards');
   const [selectedTemplate, setSelectedTemplate] = useState('');
-  const toast = useToast();
+  
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [editingEvent, setEditingEvent] = useState(null);
   const [formData, setFormData] = useState({
@@ -132,6 +143,8 @@ const EventsCreation = () => {
     eventType: 'public_info_only'
   });
 
+  const toast = useToast();
+
   // Récupération des données
   const fetchEvents = useCallback(async () => {
     try {
@@ -145,6 +158,7 @@ const EventsCreation = () => {
         title: "Erreur de chargement",
         description: "Impossible de charger les événements"
       });
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -189,6 +203,7 @@ const EventsCreation = () => {
       eventType: 'public_info_only'
     });
     setSelectedTemplate('');
+    setEditingEvent(null);
   };
 
   const applyTemplate = (templateKey) => {
@@ -198,14 +213,7 @@ const EventsCreation = () => {
     setFormData(prev => ({
       ...prev,
       ...template.defaults,
-      eventType: templateKey,
-      // Conserver les champs déjà remplis
-      title: prev.title,
-      date: prev.date,
-      time: prev.time,
-      location: prev.location,
-      description: prev.description,
-      vehicleId: prev.vehicleId
+      eventType: templateKey
     }));
     
     setSelectedTemplate(templateKey);
@@ -284,7 +292,7 @@ const EventsCreation = () => {
         helloAssoUrl: formData.helloAssoUrl.trim() || null,
         vehicleId: formData.vehicleId || null,
         status: formData.status,
-        extras: {
+        extras: JSON.stringify({
           isVisible: formData.isVisible,
           allowPublicRegistration: formData.allowPublicRegistration,
           requiresRegistration: formData.requiresRegistration,
@@ -294,7 +302,7 @@ const EventsCreation = () => {
           registrationMethod: formData.registrationMethod,
           pdfUrl: formData.pdfUrl || null,
           eventType: formData.eventType
-        }
+        })
       };
 
       if (editingEvent) {
@@ -575,11 +583,15 @@ const EventsCreation = () => {
                       />
                     </FormControl>
 
-                    {/* Sélecteur de véhicule amélioré */}
-                    <VehicleSelector
-                      value={formData.vehicleId}
-                      onChange={(vehicleId) => setFormData(prev => ({ ...prev, vehicleId }))}
-                    />
+                    {/* Sélecteur de véhicule */}
+                    <FormControl>
+                      <FormLabel>Véhicule assigné</FormLabel>
+                      <VehicleSelector
+                        vehicles={vehicles}
+                        value={formData.vehicleId}
+                        onChange={(vehicleId) => setFormData(prev => ({ ...prev, vehicleId }))}
+                      />
+                    </FormControl>
 
                     <FormControl>
                       <FormLabel>Description</FormLabel>
@@ -733,5 +745,3 @@ const EventsCreation = () => {
     </Box>
   );
 };
-
-export default EventsCreation;
