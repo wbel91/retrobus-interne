@@ -16,6 +16,16 @@ import PDFDocument from 'pdfkit';
 import { documentsAPI as docsAPI, upload as documentsUpload } from './documents.js';
 import * as newsletterService from './newsletter-service.js';
 
+// Déclaration du middleware d'upload (multer)
+const uploadGallery = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    if ((file.mimetype || '').startsWith('image/')) return cb(null, true);
+    return cb(new Error('Seules les images sont acceptées pour la galerie'), false);
+  }
+});
+
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
@@ -266,6 +276,32 @@ const transformEvent = (evt) => {
     extras: evt.extras,
     createdAt: evt.createdAt,
     updatedAt: evt.updatedAt
+  };
+};
+
+const transformStock = (s) => {
+  if (!s) return null;
+  return {
+    id: s.id,
+    reference: s.reference,
+    name: s.name,
+    description: s.description,
+    category: s.category,
+    subcategory: s.subcategory,
+    quantity: s.quantity,
+    minQuantity: s.minQuantity,
+    unit: s.unit,
+    location: s.location,
+    supplier: s.supplier,
+    purchasePrice: s.purchasePrice,
+    salePrice: s.salePrice,
+    status: s.status,
+    lastRestockDate: s.lastRestockDate,
+    expiryDate: s.expiryDate,
+    notes: s.notes,
+    createdBy: s.createdBy,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt
   };
 };
 
@@ -2034,12 +2070,6 @@ app.get('/newsletter/stats', requireAuth, async (_req, res) => {
   }
 });
 
-// Déclaration unique et avant toute route qui l'utilise
-const uploadGallery = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    if ((file.mimetype || '').startsWith('image/')) return cb(null, true);
-    return cb(new Error('Seules les images sont acceptées pour la galerie'), false);
-  }
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
 });
