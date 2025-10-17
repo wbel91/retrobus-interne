@@ -79,6 +79,7 @@ export default function MyMembership() {
     fetchMemberData();
   }, []);
 
+  // Améliorer la fonction fetchMemberData
   const fetchMemberData = async () => {
     try {
       setLoading(true);
@@ -116,36 +117,31 @@ export default function MyMembership() {
         if (response.ok) {
           const memberInfo = await response.json();
           console.log('✅ Profil membre chargé via API:', memberInfo);
-          setMemberData(memberInfo);
+          setMemberData({
+            ...memberInfo,
+            // S'assurer que les informations affichées sont correctes
+            matricule: memberInfo.matricule, // Identifiant de connexion
+            memberNumber: memberInfo.memberNumber, // Numéro d'adhérent
+            isAdminAccount: false
+          });
           setEditData(memberInfo);
           setCreateMode(false);
-        } else if (response.status === 404) {
-          console.log('ℹ️ Profil membre non trouvé via API');
+        } else {
+          console.log('❌ Erreur API ou membre non trouvé');
           setMemberData(null);
           setCreateMode(true);
-        } else {
-          throw new Error(`Erreur API: ${response.status}`);
         }
       }
-      
     } catch (error) {
-      console.error('❌ Erreur chargement:', error);
-      
-      // Fallback sur les données admin si disponibles
-      const adminProfile = detectAdminProfile();
-      if (adminProfile) {
-        console.log('🔄 Fallback sur profil admin:', adminProfile);
-        setMemberData(adminProfile);
-        setEditData(adminProfile);
-        setCreateMode(true);
-      } else {
-        toast({
-          status: 'error',
-          title: 'Erreur',
-          description: 'Impossible de charger les données d\'adhésion',
-          duration: 5000
-        });
-      }
+      console.error('Erreur chargement membre:', error);
+      toast({
+        title: "Erreur de chargement",
+        description: "Impossible de charger les informations d'adhésion",
+        status: "error",
+        duration: 5000
+      });
+      setMemberData(null);
+      setCreateMode(true);
     } finally {
       setLoading(false);
     }
@@ -440,6 +436,19 @@ export default function MyMembership() {
                     <Text fontSize="sm" color="gray.600" mb={2}>Matricule</Text>
                     <Text fontWeight="bold" color="blue.600">
                       {memberData.matricule}
+                    </Text>
+                    <Text fontSize="xs" color="gray.500">
+                      Utilisé pour se connecter au site
+                    </Text>
+                  </Box>
+
+                  <Box>
+                    <Text fontSize="sm" color="gray.600" mb={2}>Numéro d'adhérent</Text>
+                    <Text fontWeight="bold" color="purple.600">
+                      {memberData.memberNumber}
+                    </Text>
+                    <Text fontSize="xs" color="gray.500">
+                      Numéro unique d'adhésion
                     </Text>
                   </Box>
                 </SimpleGrid>

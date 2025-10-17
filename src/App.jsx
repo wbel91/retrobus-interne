@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import DashboardHome from "./pages/DashboardHome";
 import MyRBE from "./pages/MyRBE";
 import MyRBEActions from "./pages/MyRBEActions";
+import AdminFinance from "./pages/AdminFinance";
 import Vehicules from "./pages/Vehicules";
 import VehiculeShow from "./pages/VehiculeShow";
 import Evenements from "./pages/Evenements";
@@ -43,6 +44,9 @@ export default function App() {
         <Route path="/dashboard/home" element={<ProtectedRoute><DashboardHome /></ProtectedRoute>} />
         <Route path="/dashboard/myrbe" element={<ProtectedRoute><MyRBE /></ProtectedRoute>} />
         <Route path="/dashboard/myrbe/:parc" element={<ProtectedRoute><MyRBEActions /></ProtectedRoute>} />
+        
+        {/* Route pour la gestion administrative et financière */}
+        <Route path="/admin" element={<ProtectedRoute><AdminFinance /></ProtectedRoute>} />
         
         <Route path="/dashboard/vehicules" element={<ProtectedRoute><Vehicules /></ProtectedRoute>} />
         <Route path="/dashboard/vehicules/:parc" element={<ProtectedRoute><VehiculeShow /></ProtectedRoute>} />
