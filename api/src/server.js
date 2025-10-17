@@ -1773,6 +1773,38 @@ async function retroMailSavePdf(buffer, suggestedName) {
   return { fileName: pdfName, url: `/retromail/${pdfName}` };
 }
 
+// Static pour pièces jointes et PDFs
+app.use('/retromail', express.static(RETROMAIL_DIR, { fallthrough: true }));
+
+// Liste les messages JSON
+app.get('/retromail/list', async (_req, res) => {
+  try {
+    const entries = await fs.readdir(RETROMAIL_DIR, { withFileTypes: true });
+    const jsonFiles = entries.filter(d => d.isFile() && d.name.toLowerCase().endsWith('.json'))
+      .map(d => d.name).sort();
+    res.json(jsonFiles);
+  } catch (e) {
+    console.warn('retromail/list error:', e);
+    res.json([]);
+  }
+});
+
+// Lire un message JSON
+app.get('/retromail/:filename', async (req, res, next) => {
+  try {
+    const fn = req.params.filename || '';
+    if (!/^[a-zA-Z0-9._-]+$/.test(fn)) return res.status(400).json({ error: 'Nom de fichier invalide' });
+    if (!fn.toLowerCase().endsWith('.json')) return next(); // laisser la main au static (pdf, images)
+    const filePath = path.join(RETROMAIL_DIR, fn);
+    const buf = await fs.readFile(filePath, 'utf-8');
+    res.json(JSON.parse(buf));
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'Message introuvable' });
+    console.error('retromail read error:', e);
+    res.status(500).json({ error: 'Erreur lecture message' });
+  }
+});
+
 // ...placer ceci au-dessus des routes /api/stocks/:id/movement...
 
 async function generateMovementPDF({ stock, movement, actor, member }) {
@@ -2002,34 +2034,12 @@ app.get('/newsletter/stats', requireAuth, async (_req, res) => {
   }
 });
 
+// Déclaration unique et avant toute route qui l'utilise
 const uploadGallery = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     if ((file.mimetype || '').startsWith('image/')) return cb(null, true);
-    cb(new Error('Seules les images sont acceptées'), false);
+    return cb(new Error('Seules les images sont acceptées pour la galerie'), false);
   }
-});
-
-const transformStock = (s) => ({
-  id: s.id,
-  reference: s.reference,
-  name: s.name,
-  description: s.description,
-  category: s.category,
-  subcategory: s.subcategory,
-  quantity: s.quantity,
-  minQuantity: s.minQuantity,
-  unit: s.unit,
-  location: s.location,
-  supplier: s.supplier,
-  purchasePrice: s.purchasePrice,
-  salePrice: s.salePrice,
-  status: s.status,
-  lastRestockDate: s.lastRestockDate,
-  expiryDate: s.expiryDate,
-  notes: s.notes,
-  createdBy: s.createdBy,
-  createdAt: s.createdAt,
-  updatedAt: s.updatedAt
 });
