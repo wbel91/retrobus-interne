@@ -1341,25 +1341,96 @@ app.get('/admin/retro-reports', requireAuth, async (req, res) => {
 
 app.post('/admin/retro-reports', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
+  
+  console.log('📝 === DÉBUT CRÉATION RÉTRO REPORT ===');
+  console.log('👤 User:', req.user);
+  console.log('📦 Body reçu:', req.body);
+  
   try {
     const { title, description, category, priority, type } = req.body;
     
+    // Validation des données
+    if (!title || !description) {
+      console.log('❌ Validation échouée: titre ou description manquant');
+      return res.status(400).json({ 
+        error: 'Titre et description requis',
+        received: { title: !!title, description: !!description }
+      });
+    }
+    
+    // Préparation des données
+    const reportData = {
+      title: String(title).trim(),
+      description: String(description).trim(),
+      category: category ? String(category).trim() : null,
+      priority: priority || 'medium',
+      type: type || 'bug',
+      status: 'open',
+      createdBy: req.user?.email || req.user?.matricule || 'system'
+    };
+    
+    console.log('📝 Données à insérer:', reportData);
+    
+    // Vérification de la connexion Prisma
+    console.log('🔌 Test connexion Prisma...');
+    await prisma.$queryRaw`SELECT 1`;
+    console.log('✅ Prisma connecté');
+    
+    // Création du report
+    console.log('💾 Création en base...');
     const report = await prisma.retroReport.create({
-      data: {
-        title,
-        description,
-        category,
-        priority: priority || 'medium',
-        type: type || 'bug',
-        status: 'open',
-        createdBy: req.user?.email || 'system'
+      data: reportData,
+      include: {
+        comments: {
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
     
-    res.json(report);
+    console.log('✅ RétroReport créé avec succès:', {
+      id: report.id,
+      title: report.title,
+      status: report.status
+    });
+    
+    res.status(201).json(report);
+    
   } catch (error) {
-    console.error('Erreur création RétroReport:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('❌ === ERREUR CRÉATION RÉTRO REPORT ===');
+    console.error('Type:', error.constructor.name);
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+    
+    if (error.code) {
+      console.error('Code Prisma:', error.code);
+    }
+    
+    // Gestion spécifique des erreurs Prisma
+    if (error.code === 'P2002') {
+      res.status(400).json({ 
+        error: 'Contrainte d\'unicité violée',
+        details: error.meta 
+      });
+    } else if (error.code === 'P2025') {
+      res.status(404).json({ 
+        error: 'Enregistrement non trouvé',
+        details: error.meta 
+      });
+    } else if (error.code && error.code.startsWith('P')) {
+      res.status(500).json({ 
+        error: 'Erreur base de données',
+        code: error.code,
+        details: error.meta 
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Erreur serveur lors de la création',
+        message: error.message,
+        type: error.constructor.name
+      });
+    }
+  } finally {
+    console.log('📝 === FIN CRÉATION RÉTRO REPORT ===\n');
   }
 });
 
@@ -1484,6 +1555,57 @@ app.post('/admin/retro-reports/setup', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Erreur initialisation RétroReports:', error);
     res.status(500).json({ error: 'Erreur serveur lors de l\'initialisation' });
+  }
+});
+
+// Ajouter cet endpoint AVANT les autres endpoints RétroReports:
+
+app.get('/admin/retro-reports/debug', requireAuth, async (req, res) => {
+  try {
+    console.log('🔍 Debug endpoint appelé');
+    
+    // Test de base
+    const dbTest = await prisma.$queryRaw`SELECT 1 as test`;
+    
+    // Comptages
+    const reportCount = await prisma.retroReport.count();
+    const commentCount = await prisma.retroReportComment.count();
+    
+    // Derniers reports
+    const lastReports = await prisma.retroReport.findMany({
+      take: 3,
+      orderBy: { createdAt: 'desc' },
+      include: { comments: true }
+    });
+
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      database: {
+        connected: !!dbTest,
+        reportCount,
+        commentCount
+      },
+      auth: {
+        user: req.user,
+        hasToken: !!req.headers.authorization
+      },
+      lastReports: lastReports.map(r => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        createdAt: r.createdAt
+      }))
+    };
+
+    res.json(debugInfo);
+    
+  } catch (error) {
+    console.error('❌ Erreur debug endpoint:', error);
+    res.status(500).json({
+      error: 'Erreur debug',
+      message: error.message,
+      code: error.code
+    });
   }
 });
 
