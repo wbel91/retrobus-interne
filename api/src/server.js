@@ -1464,13 +1464,24 @@ app.post('/admin/retro-reports/:id/comments', requireAuth, async (req, res) => {
   }
 });
 
-// ========== ENDPOINT D'INITIALISATION RETROREPORTS ==========
+// ========== ENDPOINTS RETROREPORTS POUR RAILWAY ==========
+
+// Endpoint de vérification santé
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'RétroBus API',
+    version: '1.0.0'
+  });
+});
+
+// Setup/Initialisation RétroReports (doit être AVANT l'endpoint générique)
 app.post('/admin/retro-reports/setup', requireAuth, async (req, res) => {
   if (!ensureDB(res)) return;
   try {
-    console.log('🚀 Initialisation RétroReports...');
+    console.log('🚀 Initialisation RétroReports sur Railway...');
 
-    // Nettoyage optionnel des données existantes
     const { resetData } = req.body;
     if (resetData) {
       await prisma.retroReportComment.deleteMany({});
@@ -1478,43 +1489,43 @@ app.post('/admin/retro-reports/setup', requireAuth, async (req, res) => {
       console.log('🗑️ Données existantes supprimées');
     }
 
-    // Création des tickets d'exemple
+    // Tickets d'exemple
     const sampleReports = [
       {
-        title: 'Problème de connexion base de données',
-        description: 'La connexion à la base de données se ferme parfois de manière inattendue lors des opérations longues sur les membres.',
-        category: 'Technique',
+        title: 'Connexion Railway lente',
+        description: 'La connexion à la base de données Railway est parfois lente lors des pics de trafic.',
+        category: 'Infrastructure',
         priority: 'high',
-        type: 'bug',
+        type: 'performance',
         status: 'open',
         createdBy: req.user?.email || 'system@retrobus-essonne.fr',
       },
       {
-        title: 'Amélioration interface gestion membres',
-        description: 'L\'interface de gestion des membres nécessite une refonte complète pour améliorer l\'expérience utilisateur.',
+        title: 'Interface gestion membres à améliorer',
+        description: 'L\'interface de gestion des membres nécessite une refonte complète pour une meilleure UX.',
         category: 'Interface',
         priority: 'critical',
         type: 'feature',
         status: 'open',
-        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+        createdBy: req.user?.email || 'admin@retrobus-essonne.fr',
       },
       {
-        title: 'Optimisation des requêtes véhicules',
-        description: 'Les requêtes sur la table des véhicules sont lentes avec plus de 1000 entrées.',
+        title: 'Optimisation requêtes vehicules',
+        description: 'Les requêtes sur la table vehicules sont lentes avec beaucoup d\'entrées.',
         category: 'Performance',
         priority: 'medium',
         type: 'performance',
         status: 'in_progress',
-        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+        createdBy: req.user?.email || 'dev@retrobus-essonne.fr',
       },
       {
-        title: 'Mise à jour sécurité JWT',
-        description: 'Les tokens JWT doivent être mis à jour vers une version plus sécurisée.',
+        title: 'Mise à jour sécurité authentification',
+        description: 'Les tokens JWT doivent être renforcés avec une rotation automatique.',
         category: 'Sécurité',
         priority: 'high',
         type: 'security',
         status: 'open',
-        createdBy: req.user?.email || 'system@retrobus-essonne.fr',
+        createdBy: req.user?.email || 'security@retrobus-essonne.fr',
       }
     ];
 
@@ -1527,51 +1538,209 @@ app.post('/admin/retro-reports/setup', requireAuth, async (req, res) => {
       createdReports.push(created);
     }
 
-    // Ajout de commentaires d'exemple
-    await prisma.retroReportComment.create({
-      data: {
-        reportId: createdReports[0].id,
-        message: 'J\'ai identifié que le problème vient du timeout de connexion configuré trop bas. Investigation en cours.',
-        author: req.user?.email || 'dev@retrobus-essonne.fr'
-      }
-    });
+    // Commentaires d'exemple
+    if (createdReports.length > 0) {
+      await prisma.retroReportComment.create({
+        data: {
+          reportId: createdReports[0].id,
+          message: 'Investigation en cours sur les timeouts de connexion Railway. Monitoring mis en place.',
+          author: req.user?.email || 'devops@retrobus-essonne.fr'
+        }
+      });
 
-    await prisma.retroReportComment.create({
-      data: {
-        reportId: createdReports[2].id,
-        message: 'Optimisation terminée. Performance améliorée de 70%. Tests en cours.',
-        author: req.user?.email || 'performance@retrobus-essonne.fr'
+      if (createdReports.length > 2) {
+        await prisma.retroReportComment.create({
+          data: {
+            reportId: createdReports[2].id,
+            message: 'Optimisation des index terminée. Performance améliorée de 60% sur Railway.',
+            author: req.user?.email || 'performance@retrobus-essonne.fr'
+          }
+        });
       }
-    });
+    }
 
-    console.log(`✅ ${createdReports.length} tickets créés avec succès`);
+    console.log(`✅ ${createdReports.length} RétroReports créés sur Railway`);
     
     res.json({
       success: true,
-      message: `RétroReports initialisé avec ${createdReports.length} tickets`,
-      reports: createdReports
+      message: `RétroReports initialisé avec ${createdReports.length} tickets sur Railway`,
+      reports: createdReports,
+      environment: 'Railway Production'
     });
 
   } catch (error) {
-    console.error('Erreur initialisation RétroReports:', error);
-    res.status(500).json({ error: 'Erreur serveur lors de l\'initialisation' });
+    console.error('❌ Erreur initialisation RétroReports Railway:', error);
+    res.status(500).json({ 
+      error: 'Erreur serveur lors de l\'initialisation',
+      details: error.message,
+      environment: 'Railway Production'
+    });
   }
 });
 
-// Ajouter cet endpoint AVANT les autres endpoints RétroReports:
+// GET - Récupérer tous les RétroReports
+app.get('/admin/retro-reports', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    console.log('📋 Récupération RétroReports Railway...');
+    
+    const reports = await prisma.retroReport.findMany({
+      include: {
+        comments: {
+          orderBy: { createdAt: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    console.log(`✅ ${reports.length} RétroReports récupérés de Railway`);
+    res.json({ 
+      reports,
+      environment: 'Railway Production',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur récupération RétroReports Railway:', error);
+    res.status(500).json({ 
+      error: 'Erreur serveur lors de la récupération',
+      details: error.message,
+      environment: 'Railway Production'
+    });
+  }
+});
 
+// POST - Créer un nouveau RétroReport
+app.post('/admin/retro-reports', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  
+  console.log('📝 === CRÉATION RÉTRO REPORT RAILWAY ===');
+  console.log('👤 User:', req.user);
+  console.log('📦 Body:', req.body);
+  
+  try {
+    const { title, description, category, priority, type } = req.body;
+    
+    if (!title || !description) {
+      console.log('❌ Validation échouée sur Railway');
+      return res.status(400).json({ 
+        error: 'Titre et description requis',
+        environment: 'Railway Production'
+      });
+    }
+    
+    const reportData = {
+      title: String(title).trim(),
+      description: String(description).trim(),
+      category: category ? String(category).trim() : null,
+      priority: priority || 'medium',
+      type: type || 'bug',
+      status: 'open',
+      createdBy: req.user?.email || req.user?.matricule || 'system@railway'
+    };
+    
+    console.log('📝 Données pour Railway:', reportData);
+    
+    const report = await prisma.retroReport.create({
+      data: reportData,
+      include: {
+        comments: { orderBy: { createdAt: 'desc' } }
+      }
+    });
+    
+    console.log('✅ RétroReport créé sur Railway:', {
+      id: report.id,
+      title: report.title,
+      status: report.status
+    });
+    
+    res.status(201).json({
+      ...report,
+      environment: 'Railway Production'
+    });
+    
+  } catch (error) {
+    console.error('❌ === ERREUR CRÉATION RAILWAY ===');
+    console.error('Message:', error.message);
+    console.error('Code:', error.code);
+    
+    if (error.code === 'P2002') {
+      res.status(400).json({ 
+        error: 'Contrainte d\'unicité violée',
+        environment: 'Railway Production'
+      });
+    } else if (error.code && error.code.startsWith('P')) {
+      res.status(500).json({ 
+        error: 'Erreur base de données Railway',
+        code: error.code,
+        environment: 'Railway Production'
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Erreur serveur Railway lors de la création',
+        message: error.message,
+        environment: 'Railway Production'
+      });
+    }
+  }
+});
+
+// POST - Ajouter un commentaire à un RétroReport
+app.post('/admin/retro-reports/:id/comments', requireAuth, async (req, res) => {
+  if (!ensureDB(res)) return;
+  try {
+    const { id } = req.params;
+    const { message, status } = req.body;
+    
+    console.log('💬 Ajout commentaire Railway:', { reportId: id, message, status });
+    
+    if (!message) {
+      return res.status(400).json({ 
+        error: 'Message requis',
+        environment: 'Railway Production'
+      });
+    }
+    
+    const comment = await prisma.retroReportComment.create({
+      data: {
+        reportId: id,
+        message,
+        author: req.user?.email || req.user?.matricule || 'system@railway'
+      }
+    });
+    
+    if (status) {
+      await prisma.retroReport.update({
+        where: { id },
+        data: { status }
+      });
+    }
+    
+    console.log('✅ Commentaire ajouté sur Railway:', comment.id);
+    res.json({
+      ...comment,
+      environment: 'Railway Production'
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur ajout commentaire Railway:', error);
+    res.status(500).json({ 
+      error: 'Erreur serveur Railway lors de l\'ajout du commentaire',
+      message: error.message,
+      environment: 'Railway Production'
+    });
+  }
+});
+
+// Endpoint de debug pour Railway
 app.get('/admin/retro-reports/debug', requireAuth, async (req, res) => {
   try {
-    console.log('🔍 Debug endpoint appelé');
+    console.log('🔍 Debug RétroReports Railway');
     
-    // Test de base
     const dbTest = await prisma.$queryRaw`SELECT 1 as test`;
-    
-    // Comptages
     const reportCount = await prisma.retroReport.count();
     const commentCount = await prisma.retroReportComment.count();
     
-    // Derniers reports
     const lastReports = await prisma.retroReport.findMany({
       take: 3,
       orderBy: { createdAt: 'desc' },
@@ -1580,10 +1749,12 @@ app.get('/admin/retro-reports/debug', requireAuth, async (req, res) => {
 
     const debugInfo = {
       timestamp: new Date().toISOString(),
+      environment: 'Railway Production',
       database: {
         connected: !!dbTest,
         reportCount,
-        commentCount
+        commentCount,
+        url: process.env.DATABASE_URL ? 'Configurée' : 'Non configurée'
       },
       auth: {
         user: req.user,
@@ -1593,21 +1764,25 @@ app.get('/admin/retro-reports/debug', requireAuth, async (req, res) => {
         id: r.id,
         title: r.title,
         status: r.status,
-        createdAt: r.createdAt
+        createdAt: r.createdAt,
+        commentsCount: r.comments.length
       }))
     };
 
+    console.log('✅ Debug Railway terminé');
     res.json(debugInfo);
     
   } catch (error) {
-    console.error('❌ Erreur debug endpoint:', error);
+    console.error('❌ Erreur debug Railway:', error);
     res.status(500).json({
-      error: 'Erreur debug',
+      error: 'Erreur debug Railway',
       message: error.message,
-      code: error.code
+      environment: 'Railway Production'
     });
   }
 });
+
+// ========== FIN ENDPOINTS RETROREPORTS RAILWAY ==========
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
